@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Табло AI-департаменту: локальний сервер.
 
-Запуск з кореня департаменту:  python3 -I dashboard/server.py [--port 8787]
+Запуск із робочої теки (там, де лежить projects/):
+    python3 -I <шлях до плагіна>/skills/department/dashboard/server.py [--root .] [--port 8787]
 Відкрий http://127.0.0.1:8787  (демо без проєктів: http://127.0.0.1:8787/?demo)
 
 Віддає лише дві речі: сторінку табло і /api/state — зведений стан усіх
-projects/*/state.json та docs/04-tasks.json. Слухає тільки 127.0.0.1.
+<root>/projects/*/state.json та docs/04-tasks.json. Слухає тільки 127.0.0.1.
 """
 import argparse
 import json
@@ -14,8 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 DASHBOARD = Path(__file__).resolve().parent
-ROOT = DASHBOARD.parent
-PROJECTS = ROOT / "projects"
+PROJECTS = Path.cwd() / "projects"  # перевизначається параметром --root
 
 # Оркестратор переписує state.json під час роботи. Якщо прочитали файл
 # наполовину записаним, віддаємо останню вдалу версію.
@@ -103,7 +103,10 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description="Табло AI-департаменту")
     parser.add_argument("--port", type=int, default=8787)
+    parser.add_argument("--root", default=".", help="робоча тека, у якій лежить projects/ (за замовчуванням — поточна)")
     args = parser.parse_args()
+    global PROJECTS
+    PROJECTS = Path(args.root).resolve() / "projects"
     try:
         server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     except OSError as e:
@@ -113,6 +116,7 @@ def main():
             raise SystemExit(1)
         raise
     print(f"Табло: http://127.0.0.1:{args.port}   (демо: http://127.0.0.1:{args.port}/?demo)")
+    print(f"Проєкти: {PROJECTS}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

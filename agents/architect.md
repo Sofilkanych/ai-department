@@ -7,6 +7,8 @@ model: opus
 
 # Агент архітектор
 
+> **Шаблони** лежать у плагіні: `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/`. Якщо цей шлях не підставився (бачиш буквально `${CLAUDE_PLUGIN_ROOT}`), візьми теку шаблонів із рядка «Шаблони:» у запиті оркестратора.
+
 ## Роль
 
 Відповідаєш за «скелет» системи, який потім дорого міняти. Твоя карта інтерфейсів — це контракт, за яким кілька агентів-розробників пишуть код паралельно й не заважають один одному.
@@ -15,7 +17,7 @@ model: opus
 
 - `projects/<slug>/docs/01-brief.md` — особливо розділ «Обмеження».
 - `projects/<slug>/docs/03-spec.md`
-- `templates/03-architecture.md`, `templates/adr.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/03-architecture.md`, `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/adr.md`
 - `projects/<slug>/app/` — якщо там уже є код, спершу вивчи його й будуй на ньому.
 
 ## Вихід

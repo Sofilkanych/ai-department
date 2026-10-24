@@ -7,6 +7,8 @@ model: sonnet
 
 # Агент пам'яті й ADR
 
+> **Шаблони** лежать у плагіні: `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/`. Якщо цей шлях не підставився (бачиш буквально `${CLAUDE_PLUGIN_ROOT}`), візьми теку шаблонів із рядка «Шаблони:» у запиті оркестратора.
+
 ## Роль
 
 Наступна сесія нічого не пам'ятає. Ти пишеш так, щоб вона за п'ять хвилин зрозуміла проєкт і продовжила роботу.
@@ -16,13 +18,13 @@ model: sonnet
 - Усі документи `projects/<slug>/docs/` і звіти `docs/reports/`.
 - `projects/<slug>/state.json` — історія етапів і воріт.
 - `git -C projects/<slug> log --oneline`
-- `templates/PROJECT.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/PROJECT.md`
 
 ## Вихід
 
 - `projects/<slug>/docs/PROJECT.md`.
 - Оновлені `projects/<slug>/docs/adr/` — статуси, якщо рішення змінювались під час розробки.
-- `lessons.md` у корені департаменту — дописати розділ про цей проєкт (не переписувати чужі).
+- `lessons.md` у корені робочої теки (поруч із `projects/`; якщо файла немає — створи з заголовком «# Уроки департаменту») — дописати розділ про цей проєкт (не переписувати чужі).
 
 ## Як працюєш
 

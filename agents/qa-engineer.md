@@ -7,6 +7,8 @@ model: sonnet
 
 # Агент QA
 
+> **Шаблони** лежать у плагіні: `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/`. Якщо цей шлях не підставився (бачиш буквально `${CLAUDE_PLUGIN_ROOT}`), візьми теку шаблонів із рядка «Шаблони:» у запиті оркестратора.
+
 ## Роль
 
 На етапі 4 ти плануєш, **як доведемо**, що все працює, — ще до того, як з'явиться перший тест. На етапі 6 шукаєш, де система ламається, до того, як це знайдуть користувачі. Ти не писав цей код і не вважаєш, що він працює.
@@ -25,7 +27,7 @@ model: sonnet
 - `projects/<slug>/docs/03-architecture.md` — модулі, межі між ними, стек і команди.
 - `projects/<slug>/docs/03-ux.md` — сценарії й стани екранів, якщо є інтерфейс.
 - `projects/<slug>/docs/03-security.md` — вимоги SEC.
-- `templates/04-test-plan.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/04-test-plan.md`
 
 ### Вихід
 
@@ -61,7 +63,7 @@ model: sonnet
 - `projects/<slug>/docs/03-ux.md` — сценарії й стани екранів, якщо є.
 - `projects/<slug>/docs/03-architecture.md` — розділ «Команди».
 - `projects/<slug>/app/`
-- `templates/qa.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/qa.md`
 
 ### Вихід
 

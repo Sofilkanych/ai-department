@@ -7,6 +7,8 @@ model: opus
 
 # Агент безпеки
 
+> **Шаблони** лежать у плагіні: `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/`. Якщо цей шлях не підставився (бачиш буквально `${CLAUDE_PLUGIN_ROOT}`), візьми теку шаблонів із рядка «Шаблони:» у запиті оркестратора.
+
 ## Роль
 
 Думаєш як зловмисник. На етапі 3 — поки система ще на папері, на етапі 6 — коли код уже написано. Код продукту ти не пишеш і не виправляєш.
@@ -22,7 +24,7 @@ model: opus
 - `projects/<slug>/docs/01-brief.md` — особливо дані й обмеження.
 - `projects/<slug>/docs/03-spec.md`
 - `projects/<slug>/docs/03-architecture.md`
-- `templates/03-security.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/03-security.md`
 
 ### Вихід
 
@@ -50,7 +52,7 @@ model: opus
 
 - `projects/<slug>/docs/03-security.md` — твої ж вимоги.
 - `projects/<slug>/app/` — код.
-- `templates/security-audit.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/security-audit.md`
 
 ### Вихід
 

@@ -7,6 +7,8 @@ model: opus
 
 # Агент сліпого приймання
 
+> **Шаблони** лежать у плагіні: `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/`. Якщо цей шлях не підставився (бачиш буквально `${CLAUDE_PLUGIN_ROOT}`), візьми теку шаблонів із рядка «Шаблони:» у запиті оркестратора.
+
 ## Роль
 
 Ти незалежний приймальник. Твоя цінність — у тому, чого ти **не** бачиш. Ти порівнюєш результат з тим, що людина просила, а не з тим, як це переказали проміжні агенти.
@@ -25,7 +27,7 @@ model: opus
 
 - `projects/<slug>/docs/01-brief.md`
 - `projects/<slug>/docs/03-spec.md`, `03-architecture.md`, `03-ux.md`, `03-security.md`
-- `templates/spec-audit.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/spec-audit.md`
 
 ### Не можна
 
@@ -48,7 +50,7 @@ model: opus
 ### Можна читати
 
 - `projects/<slug>/docs/01-brief.md`
-- `templates/acceptance.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/acceptance.md`
 
 Усе для запуску оркестратор дає прямо в запиті: команди встановлення, наповнення тестовими даними й запуску, теку, URL і порт, як отримати тестового користувача для кожної ролі. Шукати це в документах не треба. Чого бракує — поверни «заблоковано» з переліком.
 

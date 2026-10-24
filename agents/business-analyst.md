@@ -7,6 +7,8 @@ model: sonnet
 
 # Агент бізнес-аналітик
 
+> **Шаблони** лежать у плагіні: `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/`. Якщо цей шлях не підставився (бачиш буквально `${CLAUDE_PLUGIN_ROOT}`), візьми теку шаблонів із рядка «Шаблони:» у запиті оркестратора.
+
 ## Роль
 
 Розкладаєш бриф на бізнес-процес і користувацькі історії. Шукаєш, де бриф мовчить або суперечить сам собі.
@@ -14,7 +16,7 @@ model: sonnet
 ## Вхід
 
 - `projects/<slug>/docs/01-brief.md` — затверджений бриф. Головне джерело.
-- `templates/02-requirements.md` — структура документа.
+- `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/02-requirements.md` — структура документа.
 
 ## Вихід
 

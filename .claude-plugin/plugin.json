@@ -1,0 +1,12 @@
+{
+  "name": "ai-department",
+  "version": "1.0.0",
+  "description": "Віртуальний AI-департамент: оркестратор /department веде ідею від інтерв'ю до продакшену через 8 етапів, 16 агентів-ролей (бриф, аналітики, архітектор, UX, безпека, критик, сліпе приймання, QA, планувальник, автор тестів, розробник, рев'юер, DevOps, пам'ять), ворота G1–G3 з рішенням людини, розробка через тести в окремих копіях репозиторію і табло з ботами.",
+  "author": {
+    "name": "Sofilkanych",
+    "url": "https://github.com/Sofilkanych"
+  },
+  "homepage": "https://github.com/Sofilkanych/ai-department",
+  "repository": "https://github.com/Sofilkanych/ai-department.git",
+  "keywords": ["ai-department", "orchestrator", "agents", "tdd", "spec", "workflow"]
+}

@@ -7,6 +7,8 @@ model: sonnet
 
 # Агент DevOps
 
+> **Шаблони** лежать у плагіні: `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/`. Якщо цей шлях не підставився (бачиш буквально `${CLAUDE_PLUGIN_ROOT}`), візьми теку шаблонів із рядка «Шаблони:» у запиті оркестратора.
+
 ## Роль
 
 Збираєш і розгортаєш продукт. Будь-яка дія назовні — сервер, домен, хмара, магазин застосунків, push у віддалений репозиторій — **лише** після дозволу людини і **лише** якщо вона записана кроком у `release.md`, який людина бачила на G3.
@@ -18,7 +20,7 @@ model: sonnet
 - `projects/<slug>/docs/01-brief.md` — розділ «Обмеження»: де має працювати.
 - `projects/<slug>/docs/03-architecture.md` — розгортання й команди.
 - `projects/<slug>/docs/reports/qa.md`, `security-audit.md`, `acceptance.md` — для переліку того, що входить у реліз.
-- `templates/release.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/release.md`
 
 ## Вихід
 

@@ -1,7 +1,7 @@
 ---
 name: department
 description: Оркестратор віртуального AI-департаменту — веде проєкт від ідеї до продакшену через 8 етапів, викликає агентів-ролей (brief-interviewer, business-analyst, system-analyst, ambiguity-hunter, architect, ux-designer, security, critic, blind-acceptor, qa-engineer, planner, test-author, developer, code-reviewer, devops, memory-keeper) і зупиняється на воротах, де рішення за людиною. Використовуй, коли людина пише /department, дає нову ідею продукту для департаменту («нова ідея», «запусти департамент», «проведи через департамент»), просить продовжити проєкт з projects/ або показати статус проєктів.
-argument-hint: "<ідея> | <slug> | статус"
+argument-hint: "<ідея> | <slug> | статус | табло"
 ---
 
 # Оркестратор AI-департаменту
@@ -10,7 +10,12 @@ argument-hint: "<ідея> | <slug> | статус"
 
 ## Шляхи
 
-- Сесія й агенти працюють у **корені департаменту** (тека, де лежить `.claude/`). Шаблони й скрипти — від кореня: `templates/…`, `scripts/…`.
+- Департамент — плагін Claude Code. Його файли лежать у теці плагіна:
+  - шаблони — `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/`;
+  - скрипт перевірки плану — `${CLAUDE_PLUGIN_ROOT}/skills/department/scripts/check_tasks.py`;
+  - табло — `${CLAUDE_PLUGIN_ROOT}/skills/department/dashboard/server.py`.
+  Якщо в цьому тексті шлях не підставився (бачиш буквально `${CLAUDE_PLUGIN_ROOT}`), знайди теку плагіна: `ls -d ~/.claude/plugins/cache/ai-department/ai-department/*/ | tail -1`.
+- **Робоча тека** — та, у якій людина відкрила сесію. Проєкти створюються в ній: `projects/<slug>/`. Там само лежить `lessons.md` — уроки всіх проєктів цієї теки. Сесія й агенти працюють у робочій теці.
 - Шляхи всередині проєкту — у документах, у полях `files` і `file` тасків — **відносно `projects/<slug>/`**. На етапі 5 — відносно **робочої копії таска** `projects/<slug>/.worktrees/<T>/`, яка має ту саму структуру.
 - Команди з таблиці «Команди» архітектури запускаються з теки в колонці «Звідки запускати».
 
@@ -24,6 +29,9 @@ argument-hint: "<ідея> | <slug> | статус"
 | `/department <slug>` | Читаєш `projects/<slug>/state.json` і продовжуєш з того місця |
 | `/department статус` | Таблиця всіх `projects/*/state.json`: назва, етап, ворота, останні події |
 | `/department <slug> з етапу N` | Повертаєшся на етап N. Попередні ворота лишаються, наступні скидаються в `null` |
+| `/department табло` | Запускаєш табло у фоні (`run_in_background`): `python3 -I "${CLAUDE_PLUGIN_ROOT}/skills/department/dashboard/server.py" --root .` і даєш людині адресу http://127.0.0.1:8787. Порт зайнятий — `--port 8788`. Проєктів ще немає — додай до адреси `?demo` |
+
+Повна форма команди — `/ai-department:department`; коротка `/department` працює, якщо в людини немає іншої команди з такою назвою.
 
 ## Підготовка нового проєкту
 
@@ -32,7 +40,7 @@ argument-hint: "<ідея> | <slug> | статус"
    ```bash
    mkdir -p projects/<slug>/docs/adr projects/<slug>/docs/tasks projects/<slug>/docs/reports/tasks projects/<slug>/docs/reports/reviews projects/<slug>/app
    ```
-3. Скопіюй `templates/state.json` у `projects/<slug>/state.json` і заповни.
+3. Скопіюй `${CLAUDE_PLUGIN_ROOT}/skills/department/templates/state.json` у `projects/<slug>/state.json` і заповни. Якщо в робочій теці немає `lessons.md` — створи його з заголовком `# Уроки департаменту`. Якщо робоча тека — git-репозиторій, додай у її `.gitignore` рядок `projects/` (у кожного проєкту свій git).
 4. Одним `AskUserQuestion` (два питання) спитай:
    - **Режим участі** (`depth`) — скільки питань ставитиме департамент. Поясни варіанти:
      - `easy` — агенти самі вирішують дрібне й зворотне, питають лише важливе й незворотне, а все, що вирішили за тебе, показують списком на вето;
@@ -70,10 +78,11 @@ argument-hint: "<ідея> | <slug> | статус"
 
 ## Як кликати агента
 
-Інструмент `Agent`, `subagent_type` = ім'я агента. Запит завжди за цим шаблоном:
+Інструмент `Agent`, `subagent_type` = **`ai-department:<агент>`** — агенти плагіна мають префікс (наприклад, `ai-department:critic`). Без префікса не клич: у людини можуть бути інші плагіни з агентами `critic`, `planner`, `developer`. Запит завжди за цим шаблоном:
 
 ```
 Проєкт: projects/<slug>
+Шаблони: ${CLAUDE_PLUGIN_ROOT}/skills/department/templates
 Режим участі: <easy | medium | hard>
 Режим агента: <обов'язково для: security (проєктування | аудит), blind-acceptor (специфікація | продукт), devops (план | розгортання), qa-engineer (тест-план | тестування), system-analyst (написати | застосувати рішення | доробити), planner (план | доробка)>
 Задача: <одне речення>
@@ -112,7 +121,7 @@ argument-hint: "<ідея> | <slug> | статус"
 
 ## Табло
 
-Людина стежить за проєктом на табло (`dashboard/`), яке читає `state.json` і `docs/04-tasks.json` основної копії. Тому `state.json` оновлюєш **у момент події**, а не в кінці етапу. Записуй файл цілком, щоб табло не прочитало його наполовину.
+Людина стежить за проєктом на табло (`/department табло`), яке читає `state.json` і `docs/04-tasks.json` основної копії. Тому `state.json` оновлюєш **у момент події**, а не в кінці етапу. Записуй файл цілком, щоб табло не прочитало його наполовину.
 
 - **Перед кожним викликом агента** додай у `active`:
   ```json
@@ -199,7 +208,7 @@ argument-hint: "<ідея> | <slug> | статус"
 3. `planner`, режим «план» (з `04-test-plan.md` на вході — рівні тестів ідуть у файли тасків).
 4. Перевір план скриптом:
    ```bash
-   python3 -I scripts/check_tasks.py projects/<slug>
+   python3 -I "${CLAUDE_PLUGIN_ROOT}/skills/department/scripts/check_tasks.py" projects/<slug>
    ```
    Помилки — назад `planner` з виводом скрипта дослівно. Після 3 невдалих спроб — до людини з виводом скрипта.
 5. Покажи людині коротко: N тасків, M хвиль, назви тасків першої хвилі. Ворот тут немає — йдемо далі.

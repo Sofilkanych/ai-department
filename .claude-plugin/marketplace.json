@@ -1,0 +1,17 @@
+{
+  "name": "ai-department",
+  "description": "Маркетплейс плагіна «AI-департамент» — віртуального IT-департаменту на агентах Claude Code.",
+  "owner": {
+    "name": "Sofilkanych",
+    "url": "https://github.com/Sofilkanych"
+  },
+  "plugins": [
+    {
+      "name": "ai-department",
+      "source": "./",
+      "description": "Віртуальний AI-департамент: /department веде ідею від інтерв'ю до продакшену через 8 етапів із 16 агентами-ролями, воротами для людини і табло з ботами.",
+      "category": "workflow",
+      "tags": ["ai-department", "orchestrator", "agents", "tdd"]
+    }
+  ]
+}
