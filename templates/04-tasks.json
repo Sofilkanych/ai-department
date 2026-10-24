@@ -1,0 +1,28 @@
+{
+  "project": "{slug}",
+  "paths_note": "files і file — відносно projects/{slug}/",
+  "generated_from": ["docs/03-spec.md", "docs/03-architecture.md", "docs/03-ux.md", "docs/03-security.md", "docs/04-test-plan.md"],
+  "waves": [
+    ["T-001"],
+    ["T-002", "T-003"]
+  ],
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "Короткий опис результату, а не процесу",
+      "file": "docs/tasks/T-001.md",
+      "kind": "scaffold | feature | registration | e2e | bugfix",
+      "migration": false,
+      "covers": ["R-01", "FR-01", "AC-01.1", "SEC-01"],
+      "acceptance": [
+        "Дано ..., коли ..., тоді ..."
+      ],
+      "files": ["app/src/module-a/**", "app/tests/module-a/**"],
+      "depends_on": [],
+      "wave": 1,
+      "status": "todo",
+      "attempts": 0,
+      "commit": null
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "slug": "{slug}",
+  "title": "{Назва проєкту}",
+  "created": "{YYYY-MM-DD}",
+  "brand": null,
+  "depth": "medium",
+  "integration": null,
+  "stage": "1-start",
+  "gates": {
+    "G1-brief": null,
+    "G2-spec": null,
+    "G3-release": null
+  },
+  "active": [],
+  "waiting": null,
+  "history": [
+    {
+      "at": "{YYYY-MM-DD HH:MM:SS}",
+      "stage": "1-start",
+      "agent": "orchestrator",
+      "event": "stage",
+      "note": "проєкт створено"
+    }
+  ]
+}

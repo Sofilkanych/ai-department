@@ -1,0 +1,918 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Табло AI-департаменту</title>
+<style>
+:root{
+  --bg:#0e0c1d;--panel:#16132b;--room:#1a1731;--room-cur:#211c42;--line:#2b2652;--line-strong:#3d3675;
+  --text:#ece9ff;--muted:#9a94c4;--faint:#6d679a;
+  --violet:#8b7cf6;--violet-soft:#2c2560;--green:#34d399;--green-soft:#123a30;--amber:#fbbf24;--amber-soft:#3d2f0e;--red:#f87171;--red-soft:#3f1a1f;
+  --radius:14px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+button,select{font:inherit;color:inherit}
+h1,h2,h3,p{margin:0}
+.wrap{max-width:1480px;margin:0 auto;padding:16px 16px 40px}
+
+/* Шапка */
+.top{display:grid;grid-template-columns:auto 1fr auto;gap:20px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 18px}
+.brand{display:flex;gap:12px;align-items:center}
+.logo{width:40px;height:40px;border-radius:12px;background:var(--violet);display:grid;place-items:center;font-weight:700;color:#120f24}
+.brand b{display:block;font-size:13px;color:var(--muted);font-weight:500}
+.brand select{background:transparent;border:0;font-size:15px;font-weight:600;padding:0;max-width:240px;cursor:pointer}
+.brand select option{background:var(--panel)}
+.now{min-width:0}
+.now h1{font-size:19px;font-weight:650;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.now p{color:var(--muted);margin-top:2px;min-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.now p b{color:var(--text);font-weight:600}
+.lvl{display:flex;align-items:center;gap:14px}
+.lvl-badge{width:52px;height:52px;border-radius:50%;border:3px solid var(--violet);display:grid;place-items:center;font-size:20px;font-weight:700;position:relative}
+.lvl-badge small{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);font-size:10px;background:var(--violet);color:#120f24;border-radius:6px;padding:0 5px;font-weight:700;letter-spacing:.04em}
+.lvl-info{width:220px}
+.lvl-name{font-weight:600}
+.xp{height:10px;border-radius:6px;background:var(--line);overflow:hidden;margin:6px 0 3px}
+.xp i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--violet),#b4a8ff);border-radius:6px;transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+.xp-txt{font-size:12px;color:var(--muted)}
+.pct{font-size:30px;font-weight:700;min-width:84px;text-align:right;font-variant-numeric:tabular-nums}
+
+/* Стежка рівнів */
+.track{display:flex;align-items:flex-start;margin:14px 0;padding:12px 6px 4px;overflow-x:auto}
+.node{flex:1 1 0;min-width:84px;display:flex;flex-direction:column;align-items:center;position:relative;gap:6px;color:var(--faint);font-size:12px;text-align:center}
+.node::before{content:"";position:absolute;top:15px;left:-50%;width:100%;height:3px;background:var(--line);z-index:0}
+.node:first-child::before{display:none}
+.node.done::before,.node.cur::before{background:var(--green)}
+.node .dot{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:var(--line);color:var(--muted);z-index:1;position:relative;font-size:13px}
+.node.done{color:var(--muted)}
+.node.done .dot{background:var(--green);color:#082b20}
+.node.cur{color:var(--text);font-weight:600}
+.node.cur .dot{background:var(--violet);color:#120f24}
+.node.cur .dot::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--violet);animation:ring 1.6s ease-out infinite}
+@keyframes ring{from{transform:scale(1);opacity:1}to{transform:scale(1.6);opacity:0}}
+.lock{position:absolute;top:4px;left:-12px;z-index:2;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:var(--panel);border:1px solid var(--line-strong)}
+.lock svg{width:13px;height:13px}
+.lock.g-wait{border-color:var(--amber);animation:pulse 1s ease-in-out infinite}
+.lock.g-open{border-color:var(--green)}
+@keyframes pulse{50%{box-shadow:0 0 0 5px rgba(251,191,36,.25)}}
+
+/* Демо */
+.demo-bar{display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;padding:8px 12px;border:1px dashed var(--line-strong);border-radius:10px;color:var(--muted);font-size:13px}
+.demo-bar.on{display:flex}
+.demo-bar .tag-demo{background:var(--amber);color:#3a2a05;font-weight:700;border-radius:6px;padding:1px 7px;font-size:12px}
+.btn{background:var(--panel);border:1px solid var(--line-strong);border-radius:8px;padding:4px 10px;cursor:pointer}
+.btn:hover{border-color:var(--violet)}
+.btn.on{background:var(--violet-soft);border-color:var(--violet)}
+
+/* Офіс + бокова панель */
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+.office{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.room{background:var(--room);border:1px solid var(--line);border-radius:var(--radius);padding:12px 12px 10px;position:relative;transition:background .6s,border-color .6s,opacity .6s;
+  background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:22px 22px}
+.room.span2{grid-column:span 2}
+.room.cur{background-color:var(--room-cur);border-color:var(--violet);box-shadow:0 0 0 1px var(--violet),0 10px 40px -12px rgba(139,124,246,.45)}
+.room.future{opacity:.62}
+.room-h{display:flex;gap:10px;align-items:center}
+.room-h .n{width:26px;height:26px;border-radius:8px;background:var(--line);display:grid;place-items:center;font-weight:700;font-size:12px;color:var(--muted);flex:none}
+.room.done .room-h .n{background:var(--green);color:#082b20}
+.room.cur .room-h .n{background:var(--violet);color:#120f24}
+.room-h h3{font-size:14px;font-weight:650}
+.room-h p{font-size:12px;color:var(--muted)}
+.room-h .grow{flex:1;min-width:0}
+.badge-now{font-size:10px;font-weight:800;letter-spacing:.08em;color:#120f24;background:var(--violet);border-radius:6px;padding:2px 6px;display:none}
+.room.cur .badge-now{display:inline-block}
+.gate-chip{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:700;border-radius:7px;padding:2px 6px;border:1px solid var(--line-strong);color:var(--muted)}
+.gate-chip svg{width:12px;height:12px}
+.gate-chip.g-wait{color:var(--amber);border-color:var(--amber);animation:pulse 1s infinite}
+.gate-chip.g-open{color:var(--green);border-color:var(--green)}
+.rbar{height:4px;border-radius:3px;background:var(--line);margin:10px 0 6px;overflow:hidden}
+.rbar i{display:block;height:100%;width:0;background:var(--violet);transition:width 1s}
+.room.done .rbar i{background:var(--green)}
+.desks{display:flex;flex-wrap:wrap;justify-content:center;gap:50px 6px;padding-top:50px}
+
+/* Стіл і бот */
+.desk{width:100px;display:flex;flex-direction:column;align-items:center;position:relative}
+.desk.hidden{display:none}
+.bot{width:96px;height:90px;display:block;overflow:visible}
+.bot .rig,.bot .arm,.bot .eyes,.bot .halo,.bot .bell{transform-box:fill-box;transform-origin:50% 100%}
+.bot .eyes{transform-origin:50% 50%}
+.bot .zzz,.bot .check,.bot .alert{opacity:0;transition:opacity .3s}
+.bot .ant{transition:fill .3s}
+.s-work .rig{animation:bob .9s ease-in-out infinite}
+.s-work .arm-l{animation:type .22s ease-in-out infinite alternate}
+.s-work .arm-r{animation:type .22s ease-in-out .11s infinite alternate}
+.s-work .ant{fill:var(--amber);animation:blinkant 1s steps(2) infinite}
+.s-work .logo{fill:var(--violet);animation:glow 1.4s ease-in-out infinite}
+.eyes{animation:blink 4s infinite}
+.s-sleep{opacity:.5}
+.s-sleep .eyes{transform:scaleY(.14);animation:none}
+.s-sleep .rig{animation:breathe 3.2s ease-in-out infinite}
+.s-sleep .zzz{opacity:1}
+.s-sleep .zzz text{animation:zz 2.6s ease-in infinite}
+.s-sleep .zzz text:nth-child(2){animation-delay:1.3s}
+.s-queue .eyes{animation:look 5s ease-in-out infinite}
+.s-done .check{opacity:1}
+.s-done .check{animation:pop .45s cubic-bezier(.2,1.6,.4,1)}
+.s-done .eyes{transform:scaleY(.55);animation:none}
+.s-wait .rig{animation:wiggle .7s ease-in-out infinite}
+.s-wait .ant{fill:var(--amber)}
+.s-blocked .rig{animation:shake .45s ease-in-out infinite}
+.s-blocked .alert{opacity:1}
+.s-blocked .ant{fill:var(--red)}
+.human .halo{opacity:0}
+.human.s-wait .halo{opacity:1;animation:halo 1.2s ease-out infinite}
+.human.s-wait .bell{opacity:1;animation:ringbell .5s ease-in-out infinite;transform-origin:50% 0}
+.human .bell{opacity:0}
+.human.s-wait .rig{animation:none}
+.human.s-done .check{opacity:1}
+.human.s-idle .rig{animation:breathe 3.2s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(-3px)}}
+@keyframes type{to{transform:translateY(-3px)}}
+@keyframes blinkant{50%{opacity:.25}}
+@keyframes glow{50%{opacity:.35}}
+@keyframes blink{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}
+@keyframes breathe{50%{transform:translateY(1.5px)}}
+@keyframes zz{0%{transform:translate(0,4px);opacity:0}30%{opacity:1}100%{transform:translate(6px,-10px);opacity:0}}
+@keyframes look{0%,35%{transform:translateX(0)}45%,62%{transform:translateX(-3px)}72%,90%{transform:translateX(3px)}100%{transform:translateX(0)}}
+@keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+@keyframes wiggle{25%{transform:rotate(-6deg)}75%{transform:rotate(6deg)}}
+@keyframes shake{25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}
+@keyframes halo{from{transform:scale(.9);opacity:1}to{transform:scale(1.25);opacity:0}}
+@keyframes ringbell{25%{transform:rotate(-14deg)}75%{transform:rotate(14deg)}}
+.tag{text-align:center;margin-top:2px;line-height:1.2}
+.tag b{display:block;font-size:12px;font-weight:650}
+.tag span{display:block;font-size:10.5px;color:var(--faint)}
+.tag em{display:inline-block;font-style:normal;font-size:10px;font-weight:700;color:var(--violet);background:var(--violet-soft);border-radius:5px;padding:0 5px;margin-top:2px}
+.tag em:empty{display:none}
+.bubble{position:absolute;bottom:calc(100% - 4px);left:50%;transform:translate(-50%,6px) scale(.9);width:max-content;max-width:100px;background:#f4f2ff;color:#1b1638;font-size:10.5px;line-height:1.25;border-radius:9px;padding:4px 7px;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:5;text-align:left}
+.bubble .txt{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.desk:hover .bubble .txt{-webkit-line-clamp:unset}
+.desk:hover .bubble{z-index:6;max-width:180px}
+.bubble::after{content:"";position:absolute;top:100%;left:50%;margin-left:-5px;border:5px solid transparent;border-top-color:#f4f2ff}
+.desk.st-work .bubble,.desk.st-wait .bubble,.desk.st-blocked .bubble{opacity:1;transform:translate(-50%,0) scale(1)}
+.desk.st-wait .bubble{background:var(--amber);color:#3a2a05}
+.desk.st-wait .bubble::after{border-top-color:var(--amber)}
+.desk.st-blocked .bubble{background:var(--red);color:#3a0d12}
+.desk.st-blocked .bubble::after{border-top-color:var(--red)}
+.dots{display:inline-flex;gap:2px;margin-top:2px;vertical-align:middle}
+.dots i{width:3px;height:3px;border-radius:50%;background:currentColor;animation:dot 1s infinite}
+.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+.desk:not(.st-work) .dots{display:none}
+@keyframes dot{0%,60%,100%{opacity:.25}30%{opacity:1}}
+
+/* Кабінет людини */
+.cabinet{display:grid;grid-template-columns:auto 1fr;gap:10px 16px;align-items:center}
+.cabinet .room-h{grid-column:1/-1}
+.cabinet .desks{padding-top:6px}
+.cab-msg h3{font-size:17px;font-weight:700}
+.cab-msg p{color:var(--muted);margin-top:4px}
+.cab-msg .q{margin-top:8px;background:var(--amber-soft);border:1px solid var(--amber);border-radius:10px;padding:8px 10px;color:var(--text)}
+.cabinet.waiting{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber),0 10px 40px -12px rgba(251,191,36,.45)}
+.gates{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+
+/* Бокова панель */
+aside{display:flex;flex-direction:column;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px}
+.card h2{font-size:14px;font-weight:650;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.card h2 span{color:var(--muted);font-weight:500;font-size:12px}
+.ach-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.ach{aspect-ratio:1;border-radius:12px;display:grid;place-items:center;font-size:22px;background:var(--room);border:1px solid var(--line);filter:grayscale(1);opacity:.35;position:relative;cursor:default;transition:all .5s}
+.ach.on{filter:none;opacity:1;border-color:var(--amber);background:var(--amber-soft)}
+.ach.fresh{animation:achpop .8s cubic-bezier(.2,1.6,.4,1)}
+@keyframes achpop{0%{transform:scale(.4) rotate(-20deg)}100%{transform:scale(1) rotate(0)}}
+.ach-hint{font-size:12px;color:var(--muted);margin-top:8px;min-height:18px}
+.waves{display:flex;flex-direction:column;gap:8px}
+.wave{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.wave>span{font-size:11px;color:var(--faint);width:52px}
+.chip{font-size:11px;font-weight:700;border-radius:6px;padding:2px 6px;background:var(--line);color:var(--muted)}
+.chip.in_progress{background:var(--violet-soft);color:#c9c1ff;animation:glow 1.4s infinite}
+.chip.done{background:var(--green-soft);color:var(--green)}
+.chip.blocked{background:var(--red-soft);color:var(--red)}
+.tasks-sum{font-size:12px;color:var(--muted);margin-top:8px}
+.feed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto}
+.feed li{display:grid;grid-template-columns:10px 1fr auto;gap:8px;align-items:baseline;font-size:12.5px}
+.feed li i{width:8px;height:8px;border-radius:50%;display:block;margin-top:4px}
+.feed li small{color:var(--faint);font-size:11px;white-space:nowrap}
+.feed li.fresh{animation:fadein .6s}
+@keyframes fadein{from{opacity:0;transform:translateX(8px)}}
+.muted{color:var(--muted)}
+
+/* Порожній стан, тости, конфеті */
+.empty{grid-column:1/-1;text-align:center;padding:60px 20px;background:var(--panel);border:1px dashed var(--line-strong);border-radius:var(--radius)}
+.empty h2{font-size:20px;margin-bottom:8px}
+.empty code{background:var(--room);padding:2px 6px;border-radius:6px}
+.empty .btn{margin-top:16px;padding:8px 16px}
+#toasts{position:fixed;top:16px;right:16px;display:flex;flex-direction:column;gap:8px;z-index:50;pointer-events:none}
+.toast{background:var(--panel);border:1px solid var(--amber);border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;min-width:240px;box-shadow:0 12px 30px rgba(0,0,0,.45);animation:toastin .5s cubic-bezier(.2,1.4,.4,1)}
+.toast .ic{font-size:24px}
+.toast b{display:block}
+.toast span{font-size:12px;color:var(--muted)}
+.toast.lvlup{border-color:var(--violet)}
+.toast.out{animation:toastout .4s forwards}
+@keyframes toastin{from{transform:translateX(120%)}}
+@keyframes toastout{to{transform:translateX(120%);opacity:0}}
+#confetti{position:fixed;inset:0;pointer-events:none;z-index:40}
+
+@media (max-width:1180px){.layout{grid-template-columns:1fr}.office{grid-template-columns:repeat(2,minmax(0,1fr))}.room.span2{grid-column:span 2}}
+@media (max-width:820px){.top{grid-template-columns:1fr}.lvl{justify-content:space-between}.lvl-info{flex:1;width:auto}}
+@media (max-width:640px){.office{grid-template-columns:1fr}.room.span2{grid-column:span 1}.cabinet{grid-template-columns:1fr}.ach-grid{grid-template-columns:repeat(5,1fr)}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">AI</div>
+      <div><b>AI-департамент</b><select id="proj" aria-label="Проєкт"></select></div>
+    </div>
+    <div class="now"><h1 id="title">Табло департаменту</h1><p id="activity"></p></div>
+    <div class="lvl">
+      <div class="lvl-badge"><span id="lvlNum">1</span><small>РІВ</small></div>
+      <div class="lvl-info"><div class="lvl-name" id="lvlName">—</div><div class="xp"><i id="xpFill"></i></div><div class="xp-txt" id="xpTxt">0 / 1000 XP</div></div>
+      <div class="pct" id="pct">0%</div>
+    </div>
+  </header>
+  <div class="demo-bar" id="demoBar">
+    <span class="tag-demo">ДЕМО</span><span>Вигаданий проєкт проходить усі 8 етапів.</span>
+    <button class="btn" id="demoPlay">Пауза</button>
+    <button class="btn" data-speed="1">1×</button><button class="btn" data-speed="2">2×</button><button class="btn" data-speed="4">4×</button>
+    <button class="btn" id="demoRestart">Заново</button>
+    <button class="btn" id="demoExit" hidden>До справжніх проєктів</button>
+  </div>
+  <nav class="track" id="track" aria-label="Рівні"></nav>
+  <div class="layout">
+    <main class="office" id="office"></main>
+    <aside>
+      <section class="card"><h2>Досягнення <span id="achCount"></span></h2><div class="ach-grid" id="ach"></div><div class="ach-hint" id="achHint">Наведи на значок, щоб побачити умову</div></section>
+      <section class="card"><h2>Таски <span id="tasksCount"></span></h2><div id="tasks"></div></section>
+      <section class="card"><h2>Журнал</h2><ol class="feed" id="feed"></ol></section>
+    </aside>
+  </div>
+</div>
+<div id="toasts"></div>
+<canvas id="confetti"></canvas>
+<script>
+"use strict";
+
+// ---------- Модель департаменту ----------
+const STAGES = [
+  {id:"1-start", name:"Старт", desc:"Ідея йде на інтерв'ю", w:10, agents:["brief-interviewer"], gate:"G1-brief", desks:["brief-interviewer"]},
+  {id:"2-research", name:"Дослідження", desc:"Бізнес-сенс ідеї", w:5, agents:["business-analyst"], desks:["business-analyst"]},
+  {id:"3-requirements", name:"Вимоги", desc:"Що саме будуємо", w:20, agents:["system-analyst","ambiguity-hunter","architect","ux-designer","security","critic","blind-acceptor"], gate:"G2-spec", span:2,
+    desks:["system-analyst","ambiguity-hunter","architect","ux-designer","security","critic","blind-acceptor"]},
+  {id:"4-plan", name:"План", desc:"Тест-план і таски", w:5, agents:["qa-engineer","planner"], desks:["qa-engineer","planner"]},
+  {id:"5-dev", name:"Розробка", desc:"Спершу тест, потім код", w:35, agents:["test-author","developer","code-reviewer"], span:2,
+    desks:["test-author#0","test-author#1","test-author#2","test-author#3","test-author#4","test-author#5",
+           "developer#0","developer#1","developer#2","developer#3","developer#4","developer#5","code-reviewer"]},
+  {id:"6-verify", name:"Перевірка", desc:"Перевіряє не автор", w:15, agents:["qa-engineer","security","blind-acceptor"], desks:["qa-engineer","security","blind-acceptor"]},
+  {id:"7-release", name:"Реліз", desc:"На сервер — лише з «так»", w:5, agents:["devops","security"], gate:"G3-release", desks:["devops","security"]},
+  {id:"8-operate", name:"Експлуатація", desc:"Пам'ять для наступного разу", w:5, agents:["memory-keeper"], desks:["memory-keeper"]},
+];
+const STAGE_IDX = Object.fromEntries(STAGES.map((s, i) => [s.id, i]));
+const GATES = [["G1-brief","G1","бриф",0],["G2-spec","G2","специфікація",2],["G3-release","G3","реліз",6]];
+
+const ROLES = {
+  "brief-interviewer": {name:"Питайко", title:"Агент брифу", color:"#a78bfa", head:"headset", desk:"notepad"},
+  "business-analyst": {name:"Процесик", title:"Бізнес-аналітик", color:"#60a5fa", desk:"clipboard"},
+  "system-analyst": {name:"Специк", title:"Системний аналітик", color:"#38bdf8", desk:"docs"},
+  "ambiguity-hunter": {name:"Двозначко", title:"Пошук двозначностей", color:"#e879f9", head:"question", desk:"forks"},
+  "critic": {name:"Прискіпа", title:"Критик узгодженості", color:"#2dd4bf", head:"monocle", desk:"redpen"},
+  "test-author": {name:"Тестик", title:"Автор тестів", color:"#fb7185", desk:"testtube"},
+  "architect": {name:"Каркас", title:"Архітектор", color:"#f59e0b", head:"helmet", desk:"blueprint"},
+  "ux-designer": {name:"Піксель", title:"UX-дизайнер", color:"#f472b6", head:"beret", desk:"palette"},
+  "security": {name:"Щит", title:"Безпека", color:"#f87171", desk:"shield"},
+  "blind-acceptor": {name:"Наосліп", title:"Сліпе приймання", color:"#94a3b8", head:"blindfold", desk:"checklist"},
+  "planner": {name:"Хвилько", title:"Планувальник", color:"#34d399", desk:"map"},
+  "developer": {name:"Кодько", title:"Розробник", color:"#818cf8", desk:"code"},
+  "code-reviewer": {name:"Лупа", title:"Рев'юер", color:"#fbbf24", desk:"magnifier"},
+  "qa-engineer": {name:"Багоїд", title:"QA", color:"#4ade80", desk:"net"},
+  "devops": {name:"Ракета", title:"DevOps", color:"#fb923c", desk:"rocket"},
+  "memory-keeper": {name:"Пам'ятко", title:"Пам'ять і ADR", color:"#c084fc", desk:"book"},
+  "orchestrator": {name:"Оркестратор", title:"", color:"#8b7cf6"},
+  "human": {name:"Ти", title:"Замовник", color:"#fbbf24"},
+};
+
+const ACHIEVEMENTS = [
+  {id:"start", icon:"💡", name:"Ідея на столі", hint:"Проєкт створено", test:() => true},
+  {id:"g1", icon:"📜", name:"Бриф затверджено", hint:"Пройти ворота G1", test:p => gateOk(p.gates["G1-brief"])},
+  {id:"stories", icon:"🧭", name:"Історії написано", hint:"Бізнес-аналітик завершив роботу", test:p => hasEvent(p, "business-analyst", "done")},
+  {id:"g2", icon:"📐", name:"Специфікацію затверджено", hint:"Пройти ворота G2", test:p => gateOk(p.gates["G2-spec"])},
+  {id:"plan", icon:"🗺️", name:"План на столі", hint:"Планувальник розклав таски по хвилях", test:p => hasEvent(p, "planner", "done")},
+  {id:"commit", icon:"🧱", name:"Перший коміт", hint:"Закомітити перший таск", test:p => p.history.some(h => h.event === "commit")},
+  {id:"clean", icon:"✨", name:"Чиста хвиля", hint:"Усі таски хвилі з першої спроби", test:p => !!p.tasks && p.tasks.waves.some(w => w.length && w.every(t => t.status === "done" && (t.attempts || 1) <= 1))},
+  {id:"blind", icon:"🙈", name:"Сліпий тест пройдено", hint:"Сліпе приймання продукту за брифом", test:p => p.history.some(h => h.agent === "blind-acceptor" && h.event === "done" && h.stage === "6-verify")},
+  {id:"g3", icon:"🚀", name:"Зелене світло", hint:"Пройти ворота G3", test:p => gateOk(p.gates["G3-release"])},
+  {id:"loop", icon:"🔁", name:"Цикл замкнено", hint:"Пройти всі 8 етапів", test:p => p.stage === "done"},
+];
+
+function gateOk(g){ return !!g && !!g.decision && !/ще ні/i.test(g.decision); }
+function hasEvent(p, agent, event){ return p.history.some(h => h.agent === agent && h.event === event); }
+function stageIndex(p){ return p.stage === "done" ? 8 : (STAGE_IDX[p.stage] ?? 0); }
+
+function stageFraction(p, i){
+  const st = STAGES[i];
+  if (st.id === "5-dev" && p.tasks && p.tasks.total) return p.tasks.done / p.tasks.total;
+  const done = new Set(p.history.filter(h => h.stage === st.id && h.event === "done").map(h => h.agent));
+  let f = st.agents.filter(a => done.has(a)).length / st.agents.length;
+  if (st.gate && !gateOk(p.gates[st.gate])) f = Math.min(f, 0.9);
+  return Math.min(f, 0.97);
+}
+
+function progress(p){
+  const idx = stageIndex(p);
+  if (idx >= 8) return 100;
+  let sum = 0;
+  for (let i = 0; i < idx; i++) sum += STAGES[i].w;
+  return sum + STAGES[idx].w * stageFraction(p, idx);
+}
+
+// Ролі з кількома столами: скільки столів показувати навіть без роботи
+const MULTI = {"test-author":2, "developer":2};
+// Ролі, що повертаються на кожну хвилю: до кінця етапу вони «на зміні», а не «готово»
+const RECURRING = new Set(["test-author", "developer", "code-reviewer"]);
+
+// Стан кожного столу в кімнаті r
+function deskStates(p, r){
+  const idx = stageIndex(p), st = STAGES[r], out = {};
+  const waitAssigned = {};
+  st.desks.forEach(key => {
+    const [role, n] = key.split("#");
+    const multi = role in MULTI;
+    const roleActive = p.active.filter(a => a.agent === role);
+    const info = {state:"sleep", bubble:"", task:"", hidden:false};
+    if (multi) info.hidden = Number(n) >= Math.max(MULTI[role], r === idx ? roleActive.length : 0);
+    if (idx >= 8 || r < idx) info.state = "done";
+    else if (r > idx) info.state = "sleep";
+    else {
+      const act = multi ? roleActive[Number(n)] : roleActive[0];
+      const waitsHere = p.waiting && p.waiting.agent === role && !act && !waitAssigned[role];
+      const last = [...p.history].reverse().find(h => h.stage === st.id && h.agent === role);
+      if (act) Object.assign(info, {state:"work", bubble:act.doing || "працює", task:act.task || act.mode || ""});
+      else if (waitsHere) {
+        Object.assign(info, {state:"wait", bubble:"Питання до тебе", task:(p.waiting.question.match(/^T-\d+/) || [""])[0], hidden:false});
+        waitAssigned[role] = true;
+      }
+      else if (!multi && last && last.event === "blocked") Object.assign(info, {state:"blocked", bubble:last.note || "заблоковано"});
+      else if (!RECURRING.has(role) && last && last.event === "done") info.state = "done";
+      else info.state = "queue";
+    }
+    out[key] = info;
+  });
+  return out;
+}
+
+// ---------- Малюнки ----------
+function shade(hex, k){
+  const n = parseInt(hex.slice(1), 16);
+  const f = c => Math.max(0, Math.min(255, Math.round(k < 0 ? c * (1 + k) : c + (255 - c) * k)));
+  return "#" + [n >> 16, (n >> 8) & 255, n & 255].map(f).map(c => c.toString(16).padStart(2, "0")).join("");
+}
+
+const HEAD = {
+  headset: `<path d="M31 42 a29 27 0 0 1 58 0" stroke="#1e1b3a" stroke-width="3.5" fill="none"/><rect x="27" y="36" width="8" height="14" rx="3" fill="#1e1b3a"/><path d="M31 50 q4 12 17 10" stroke="#1e1b3a" stroke-width="2.5" fill="none"/><circle cx="49" cy="60" r="3" fill="#1e1b3a"/>`,
+  helmet: `<path d="M33 27 Q60 -2 87 27 Z" fill="#fbbf24"/><rect x="27" y="23" width="66" height="7" rx="3.5" fill="#d97706"/><rect x="57" y="7" width="6" height="18" rx="2" fill="#d97706"/>`,
+  beret: `<ellipse cx="56" cy="20" rx="25" ry="8" fill="#be185d" transform="rotate(-12 56 20)"/><circle cx="50" cy="11" r="3.5" fill="#be185d"/>`,
+  blindfold: `<rect x="29" y="34" width="62" height="12" rx="5" fill="#334155"/><path d="M89 37 l11 -5 l-2 9 z M89 43 l10 7 l-6 2 z" fill="#334155"/>`,
+  question: `<circle cx="22" cy="16" r="9" fill="#f5d0fe"/><text x="22" y="21" text-anchor="middle" font-size="14" font-weight="800" fill="#a21caf">?</text>`,
+  monocle: `<circle cx="69" cy="41" r="8.5" fill="none" stroke="#fde68a" stroke-width="2.2"/><path d="M77.5 43 q6 7 3 15" stroke="#fde68a" stroke-width="1.3" fill="none"/>`,
+};
+const DESK = {
+  notepad: `<rect x="9" y="63" width="20" height="17" rx="2" fill="#fef3c7"/><path d="M12 68h14M12 72h14M12 76h9" stroke="#d97706" stroke-width="1.5"/>`,
+  clipboard: `<rect x="91" y="58" width="18" height="22" rx="2" fill="#e2e8f0"/><rect x="96" y="55" width="8" height="5" rx="1.5" fill="#64748b"/><path d="M94 66h12M94 70h12M94 74h8" stroke="#3b82f6" stroke-width="1.5"/>`,
+  docs: `<rect x="12" y="60" width="18" height="20" rx="2" fill="#bae6fd"/><rect x="9" y="63" width="18" height="17" rx="2" fill="#e0f2fe"/><path d="M12 68h12M12 72h12M12 76h8" stroke="#0284c7" stroke-width="1.5"/>`,
+  blueprint: `<rect x="7" y="70" width="27" height="10" rx="5" fill="#3b82f6"/><circle cx="8.5" cy="75" r="5" fill="#93c5fd"/><path d="M14 73h16" stroke="#bfdbfe" stroke-width="1"/>`,
+  palette: `<ellipse cx="19" cy="73" rx="12" ry="8" fill="#fde68a"/><circle cx="14" cy="71" r="2.2" fill="#f472b6"/><circle cx="20" cy="68.5" r="2.2" fill="#60a5fa"/><circle cx="25" cy="72" r="2.2" fill="#34d399"/><circle cx="17" cy="77" r="2.4" fill="#d6c58a"/>`,
+  shield: `<path d="M100 54 l10 3.5 v9 c0 7 -4.5 11 -10 13.5 c-5.5 -2.5 -10 -6.5 -10 -13.5 v-9 z" fill="#ef4444"/><path d="M95.5 66 l3.2 3.2 l5.6 -5.6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>`,
+  checklist: `<rect x="91" y="58" width="18" height="22" rx="2" fill="#e2e8f0"/><path d="M94 64 l2 2 l3.5 -3.5 M94 71 l2 2 l3.5 -3.5" stroke="#10b981" stroke-width="1.7" fill="none"/><path d="M102 64h5M102 71h5" stroke="#94a3b8" stroke-width="1.5"/><path d="M94 77 l5 0" stroke="#ef4444" stroke-width="1.7"/>`,
+  map: `<path d="M7 63 l8 -3 l8 3 l8 -3 v17 l-8 3 l-8 -3 l-8 3 z" fill="#a7f3d0"/><path d="M15 60 v17 M23 63 v17" stroke="#059669" stroke-width="1"/><path d="M10 70 q6 -6 12 0 t8 -2" stroke="#ef4444" stroke-width="1.4" fill="none" stroke-dasharray="2 1.5"/>`,
+  code: `<rect x="92" y="62" width="14" height="18" rx="3" fill="#475569"/><path d="M106 66 q5 0 5 4 q0 4 -5 4" stroke="#475569" stroke-width="2.2" fill="none"/><path d="M96 60 q2 -4 0 -7 M101 60 q2 -4 0 -7" stroke="#94a3b8" stroke-width="1.2" fill="none" opacity=".7"/>`,
+  magnifier: `<circle cx="100" cy="61" r="7.5" stroke="#fbbf24" stroke-width="3" fill="rgba(251,191,36,.15)"/><path d="M95 67 l-6 9" stroke="#fbbf24" stroke-width="3.6" stroke-linecap="round"/>`,
+  net: `<path d="M95 80 L104 57" stroke="#a16207" stroke-width="2.6"/><ellipse cx="106" cy="52" rx="8.5" ry="6.5" fill="rgba(74,222,128,.15)" stroke="#4ade80" stroke-width="2"/><path d="M98.5 52 h15 M106 46 v12" stroke="#4ade80" stroke-width="1"/><circle cx="16" cy="75" r="4.5" fill="#f87171"/><path d="M12 71 l-2 -2 M20 71 l2 -2 M11 75 h-3 M21 75 h3" stroke="#f87171" stroke-width="1.2"/>`,
+  rocket: `<path d="M101 50 c6 7 6 18 0 26 c-6 -8 -6 -19 0 -26 z" fill="#e2e8f0"/><circle cx="101" cy="61" r="2.6" fill="#fb923c"/><path d="M96.5 71 l-3.5 7 l6 -2.5 z M105.5 71 l3.5 7 l-6 -2.5 z" fill="#fb923c"/>`,
+  book: `<rect x="7" y="65" width="25" height="15" rx="2" fill="#c084fc"/><path d="M19.5 65 v15" stroke="#7e22ce" stroke-width="1.6"/><rect x="9" y="67" width="8" height="11" fill="#f3e8ff"/><rect x="22" y="67" width="8" height="11" fill="#f3e8ff"/>`,
+  forks: `<path d="M101 80 v-13 M101 67 l-7 -9 M101 67 l7 -9" stroke="#e879f9" stroke-width="3.2" stroke-linecap="round" fill="none"/><circle cx="94" cy="57" r="2.6" fill="#f5d0fe"/><circle cx="108" cy="57" r="2.6" fill="#f5d0fe"/>`,
+  redpen: `<rect x="8" y="63" width="21" height="17" rx="2" fill="#f1f5f9"/><path d="M11 68h15M11 72h11" stroke="#94a3b8" stroke-width="1.4"/><path d="M12 76 q4 -3 9 0" stroke="#ef4444" stroke-width="1.7" fill="none"/><path d="M93 79 l14 -17" stroke="#ef4444" stroke-width="3.2" stroke-linecap="round"/><path d="M107 62 l2 -2.5" stroke="#fecaca" stroke-width="3.2" stroke-linecap="round"/>`,
+  testtube: `<rect x="96" y="53" width="9" height="26" rx="4.5" fill="#e2e8f0"/><rect x="96" y="66" width="9" height="13" rx="4.5" fill="#fb7185"/><rect x="94" y="51" width="13" height="4" rx="2" fill="#94a3b8"/><path d="M10 66 l8 8 M18 66 l-8 8" stroke="#f43f5e" stroke-width="2.6" stroke-linecap="round"/>`,
+};
+const DESK_BASE = `<rect x="4" y="80" width="112" height="7" rx="3.5" fill="#3a3366"/><rect x="12" y="87" width="96" height="26" rx="3" fill="#252042"/><rect x="20" y="93" width="30" height="3" rx="1.5" fill="#322b5a"/>`;
+const CHECK = `<g class="check"><circle cx="96" cy="20" r="9.5" fill="#34d399"/><path d="M91.5 20 l3 3 l6 -6.5" stroke="#082b20" stroke-width="2.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+const ZZZ = `<g class="zzz" fill="#9a94c4" font-size="13" font-weight="700"><text x="88" y="22">z</text><text x="96" y="12" font-size="10">z</text></g>`;
+const ALERT = `<g class="alert"><circle cx="96" cy="20" r="9.5" fill="#f87171"/><rect x="94.6" y="13.5" width="2.8" height="8" rx="1.4" fill="#3a0d12"/><circle cx="96" cy="25" r="1.7" fill="#3a0d12"/></g>`;
+
+function botSVG(role){
+  const r = ROLES[role], c = r.color, dark = shade(c, -0.45), light = shade(c, 0.75);
+  const lid = role === "developer"
+    ? `<text class="logo" x="60" y="74" text-anchor="middle" font-size="10" font-weight="700" font-family="monospace" fill="#4b4580">&lt;/&gt;</text>`
+    : `<circle class="logo" cx="60" cy="70" r="3.6" fill="#4b4580"/>`;
+  return `<svg class="bot s-sleep" viewBox="0 0 120 113" aria-hidden="true">
+    ${ZZZ}
+    <g class="rig">
+      <line x1="60" y1="20" x2="60" y2="9" stroke="${dark}" stroke-width="2.6"/>
+      <circle class="ant" cx="60" cy="8" r="4.4" fill="${c}"/>
+      <rect x="32" y="20" width="56" height="42" rx="15" fill="${c}"/>
+      <rect x="38" y="27" width="44" height="28" rx="9" fill="#120f24"/>
+      <g class="eyes"><ellipse cx="51" cy="41" rx="4.3" ry="5.3" fill="${light}"/><ellipse cx="69" cy="41" rx="4.3" ry="5.3" fill="${light}"/></g>
+      <path d="M37 26 q4 -3 9 -3" stroke="${light}" stroke-width="2" fill="none" opacity=".5"/>
+      ${HEAD[r.head] || ""}
+    </g>
+    <rect class="arm arm-l" x="29" y="72" width="15" height="8" rx="4" fill="${c}"/>
+    <rect class="arm arm-r" x="76" y="72" width="15" height="8" rx="4" fill="${c}"/>
+    <path d="M41 58 h38 l3 22 h-44 z" fill="#2b2650"/>
+    ${lid}
+    ${DESK_BASE}
+    ${DESK[r.desk] || ""}
+    ${CHECK}${ALERT}
+  </svg>`;
+}
+
+function humanSVG(){
+  return `<svg class="bot human s-idle" viewBox="0 0 120 113" aria-hidden="true">
+    <circle class="halo" cx="60" cy="42" r="31" fill="none" stroke="#fbbf24" stroke-width="3"/>
+    <g class="bell"><path d="M98 6 c-6 0 -9 5 -9 10 v6 l-3 4 h24 l-3 -4 v-6 c0 -5 -3 -10 -9 -10 z" fill="#fbbf24"/><circle cx="98" cy="29" r="2.6" fill="#fbbf24"/></g>
+    <g class="rig">
+      <path d="M32 82 c0 -19 12 -27 28 -27 s28 8 28 27 z" fill="#8b7cf6"/>
+      <path d="M53 55 l7 8 l7 -8" fill="#f4f2ff"/>
+      <circle cx="60" cy="38" r="16.5" fill="#f2c4a0"/>
+      <path d="M43.5 38 c0 -13 8 -19 16.5 -19 s17.5 6 16.5 19 c-4 -7 -10 -9 -16.5 -9 s-12.5 2 -16.5 9 z" fill="#3b2f2f"/>
+      <g class="eyes"><ellipse cx="54" cy="40" rx="2.1" ry="2.5" fill="#2a1f1f"/><ellipse cx="66" cy="40" rx="2.1" ry="2.5" fill="#2a1f1f"/></g>
+      <path d="M55 47 q5 4 10 0" stroke="#2a1f1f" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    </g>
+    ${DESK_BASE}
+    <rect x="13" y="67" width="13" height="13" rx="2.5" fill="#e2e8f0"/><path d="M26 70 q5.5 0 5.5 4 q0 4 -5.5 4" stroke="#e2e8f0" stroke-width="2.2" fill="none"/>
+    <rect x="86" y="70" width="24" height="10" rx="2" fill="#a78bfa"/><rect x="88" y="66" width="20" height="5" rx="1.5" fill="#c4b5fd"/>
+    ${CHECK}
+  </svg>`;
+}
+
+const LOCK_SVG = open => open
+  ? `<svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="2" fill="currentColor"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0" stroke="currentColor" stroke-width="1.6" fill="none" transform="translate(3 -1) rotate(20 8 5)"/></svg>`
+  : `<svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="2" fill="currentColor"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0V7" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>`;
+
+// ---------- Побудова офісу (один раз) ----------
+const $ = id => document.getElementById(id);
+const els = {rooms:[], desks:{}, human:null, cab:null};
+
+function buildOffice(){
+  const office = $("office");
+  office.innerHTML = "";
+  STAGES.forEach((st, r) => {
+    const room = document.createElement("section");
+    room.className = "room future" + (st.span ? " span2" : "");
+    const gate = GATES.find(g => g[3] === r);
+    room.innerHTML = `<div class="room-h"><span class="n">${r + 1}</span><div class="grow"><h3>${st.name}</h3><p>${st.desc}</p></div>
+      ${gate ? `<span class="gate-chip" data-gate="${gate[0]}">${LOCK_SVG(false)}${gate[1]}</span>` : ""}<span class="badge-now">ЗАРАЗ</span></div>
+      <div class="rbar"><i></i></div><div class="desks"></div>`;
+    const deskWrap = room.querySelector(".desks");
+    st.desks.forEach(key => {
+      const role = key.split("#")[0], R = ROLES[role];
+      const d = document.createElement("div");
+      d.className = "desk";
+      d.innerHTML = `<div class="bubble"><span class="txt"></span><span class="dots"><i></i><i></i><i></i></span></div>${botSVG(role)}<div class="tag"><b>${R.name}</b><span>${R.title}</span><em></em></div>`;
+      deskWrap.appendChild(d);
+      els.desks[r + ":" + key] = {root:d, bot:d.querySelector(".bot"), txt:d.querySelector(".txt"), em:d.querySelector("em")};
+    });
+    office.appendChild(room);
+    els.rooms.push({root:room, bar:room.querySelector(".rbar i"), gate:room.querySelector(".gate-chip")});
+  });
+  const cab = document.createElement("section");
+  cab.className = "room cabinet span2";
+  cab.innerHTML = `<div class="room-h"><span class="n">★</span><div class="grow"><h3>Твій кабінет</h3><p>Рішення на воротах — за тобою</p></div></div>
+    <div class="desks"><div class="desk" id="humanDesk"><div class="bubble"><span class="txt">Твій хід!</span></div>${humanSVG()}<div class="tag"><b>Ти</b><span>Замовник</span><em></em></div></div></div>
+    <div class="cab-msg" id="cabMsg"></div>`;
+  office.appendChild(cab);
+  els.cab = cab;
+  els.human = {root:cab.querySelector("#humanDesk"), bot:cab.querySelector(".human")};
+}
+
+function setClass(el, cls){ if (el.getAttribute("class") !== cls) el.setAttribute("class", cls); }
+function setText(el, t){ if (el.textContent !== t) el.textContent = t; }
+
+// ---------- Час ----------
+function parseTs(s){ return s ? new Date(String(s).replace(" ", "T")) : null; }
+function ago(s){
+  const d = parseTs(s); if (!d || isNaN(d)) return "";
+  const sec = Math.max(0, (Date.now() - d) / 1000);
+  if (sec < 45) return "щойно";
+  if (sec < 3600) return Math.round(sec / 60) + " хв тому";
+  if (sec < 86400) return Math.round(sec / 3600) + " год тому";
+  return Math.round(sec / 86400) + " дн тому";
+}
+const pad = n => String(n).padStart(2, "0");
+function nowTs(){ const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+// ---------- Рендер ----------
+let projects = [], selected = null;
+const memory = {};
+
+function current(){ return projects.find(p => p.slug === selected) || projects[0] || null; }
+
+function render(){
+  const p = current();
+  const office = $("office");
+  if (!p){ renderEmpty(); return; }
+  if (!els.rooms.length || !office.contains(els.cab)) buildOffice();
+  p.history = p.history || []; p.active = p.active || []; p.gates = p.gates || {};
+
+  const idx = stageIndex(p), pct = progress(p), xp = Math.round(pct * 10);
+  const lvl = Math.min(idx + 1, 8);
+  setText($("title"), p.title || p.slug);
+  setText($("lvlNum"), String(lvl));
+  setText($("lvlName"), idx >= 8 ? "Майстер · цикл завершено" : `Рівень ${lvl} · ${STAGES[idx].name}`);
+  $("xpFill").style.width = pct + "%";
+  setText($("xpTxt"), `${xp} / 1000 XP`);
+  setText($("pct"), Math.round(pct) + "%");
+  $("activity").innerHTML = activityLine(p);
+  renderTrack(p, idx);
+
+  STAGES.forEach((st, r) => {
+    const R = els.rooms[r];
+    setClass(R.root, "room " + (r < idx ? "done" : r === idx ? "cur" : "future") + (st.span ? " span2" : ""));
+    const f = r < idx ? 1 : r > idx ? 0 : stageFraction(p, r);
+    R.bar.style.width = Math.round(f * 100) + "%";
+    if (R.gate){
+      const g = R.gate.dataset.gate, open = gateOk(p.gates[g]), wait = p.waiting && p.waiting.gate === g;
+      setClass(R.gate, "gate-chip " + (open ? "g-open" : wait ? "g-wait" : ""));
+      const svg = R.gate.querySelector("svg");
+      if (svg.dataset.open !== String(open)){ svg.outerHTML = LOCK_SVG(open); R.gate.querySelector("svg").dataset.open = String(open); }
+    }
+    const states = deskStates(p, r);
+    Object.entries(states).forEach(([key, info]) => {
+      const D = els.desks[r + ":" + key];
+      setClass(D.root, "desk st-" + info.state + (info.hidden ? " hidden" : ""));
+      setClass(D.bot, "bot s-" + info.state);
+      setText(D.txt, info.bubble);
+      setText(D.em, info.task);
+    });
+  });
+  renderCabinet(p, idx);
+  renderAchievements(p);
+  renderTasks(p);
+  renderFeed(p);
+  celebrate(p, lvl);
+}
+
+function activityLine(p){
+  if (p.stage === "done") return "Цикл завершено. Ідея пройшла шлях до продакшену.";
+  if (p.waiting) return `<b>Чекаємо на тебе:</b> ${esc(p.waiting.question)}`;
+  if (!p.active.length) return "Департамент на мить зупинився між кроками.";
+  const groups = {};
+  p.active.forEach(a => { groups[a.agent] = (groups[a.agent] || 0) + 1; });
+  const names = Object.entries(groups).map(([a, n]) => `<b>${esc((ROLES[a] || {name:a}).name)}${n > 1 ? " ×" + n : ""}</b>`);
+  const first = p.active[0];
+  return `Зараз працюють: ${names.join(", ")} · ${esc((ROLES[first.agent] || {name:first.agent}).name)} ${esc(first.doing || "")}`;
+}
+
+function renderTrack(p, idx){
+  const html = STAGES.map((st, i) => {
+    const cls = i < idx ? "done" : i === idx ? "cur" : "";
+    let lock = "";
+    const g = GATES.find(g => g[3] + 1 === i);
+    if (g){
+      const open = gateOk(p.gates[g[0]]), wait = p.waiting && p.waiting.gate === g[0];
+      lock = `<span class="lock ${open ? "g-open" : wait ? "g-wait" : ""}" title="Ворота ${g[1]} — ${g[2]}" style="color:${open ? "var(--green)" : wait ? "var(--amber)" : "var(--faint)"}">${LOCK_SVG(open)}</span>`;
+    }
+    return `<div class="node ${cls}">${lock}<span class="dot">${i < idx ? "✓" : i + 1}</span><span>${st.name}</span></div>`;
+  }).join("");
+  if ($("track").dataset.html !== html){ $("track").innerHTML = html; $("track").dataset.html = html; }
+}
+
+function renderCabinet(p, idx){
+  const H = els.human, waiting = !!p.waiting, finished = idx >= 8;
+  const state = waiting ? "wait" : finished ? "done" : "idle";
+  setClass(H.root, "desk st-" + (waiting ? "wait" : "idle"));
+  setClass(H.bot, "bot human s-" + state);
+  setClass(els.cab, "room cabinet span2" + (waiting ? " waiting" : ""));
+  let msg;
+  if (waiting){
+    const g = p.waiting.gate && GATES.find(x => x[0] === p.waiting.gate);
+    const who = ROLES[p.waiting.agent] ? ROLES[p.waiting.agent].name : "Оркестратор";
+    msg = `<h3>Твій хід!</h3><p>${g ? `Ворота ${g[1]} — ${g[2]}` : `Питання від: ${esc(who)}`} · ${ago(p.waiting.since)}</p>
+      <div class="q">${esc(p.waiting.question)}</div><p style="margin-top:8px">Відповідай у чаті Claude Code.</p>`;
+  } else if (finished){
+    msg = `<h3>Готово 🎉</h3><p>Ідея пройшла всі 8 етапів. Нові ідеї й уроки — у PROJECT.md і lessons.md.</p>`;
+  } else {
+    const next = GATES.find(g => !gateOk(p.gates[g[0]]));
+    msg = `<h3>Департамент працює</h3><p>${next ? `Наступні ворота: <b>${next[1]} — ${next[2]}</b> (етап ${next[3] + 1}). Тоді тебе покличуть.` : "Усі ворота пройдено."}</p>`;
+  }
+  const gates = GATES.map(g => {
+    const open = gateOk(p.gates[g[0]]), wait = p.waiting && p.waiting.gate === g[0];
+    return `<span class="gate-chip ${open ? "g-open" : wait ? "g-wait" : ""}">${LOCK_SVG(open)}${g[1]} · ${g[2]}</span>`;
+  }).join("");
+  const html = msg + `<div class="gates">${gates}</div>`;
+  if ($("cabMsg").dataset.html !== html){ $("cabMsg").innerHTML = html; $("cabMsg").dataset.html = html; }
+}
+
+function renderAchievements(p){
+  const mem = memory[p.slug] || {};
+  const on = ACHIEVEMENTS.filter(a => a.test(p)).map(a => a.id);
+  $("achCount").textContent = `${on.length} / ${ACHIEVEMENTS.length}`;
+  const grid = $("ach");
+  if (grid.children.length !== ACHIEVEMENTS.length){
+    grid.innerHTML = ACHIEVEMENTS.map(a => `<div class="ach" data-id="${a.id}" tabindex="0" aria-label="${esc(a.name)}">${a.icon}</div>`).join("");
+    [...grid.children].forEach(el => {
+      const a = ACHIEVEMENTS.find(x => x.id === el.dataset.id);
+      const show = () => { $("achHint").innerHTML = `<b>${esc(a.name)}</b> · ${esc(a.hint)}`; };
+      el.addEventListener("mouseenter", show); el.addEventListener("focus", show);
+    });
+  }
+  [...grid.children].forEach(el => {
+    const isOn = on.includes(el.dataset.id);
+    const fresh = isOn && mem.achs && !mem.achs.includes(el.dataset.id);
+    el.classList.toggle("on", isOn);
+    if (fresh){ el.classList.remove("fresh"); void el.offsetWidth; el.classList.add("fresh"); }
+  });
+}
+
+function renderTasks(p){
+  const t = p.tasks;
+  let html;
+  if (!t || !t.total){ html = `<p class="muted">План ще не складено. Таски з'являться після етапу 4.</p>`; $("tasksCount").textContent = ""; }
+  else {
+    $("tasksCount").textContent = `${t.done} / ${t.total}`;
+    html = `<div class="waves">` + t.waves.map((w, i) => `<div class="wave"><span>Хвиля ${i + 1}</span>${w.map(x => `<span class="chip ${x.status}" title="${esc(x.id + " · " + x.title)}">${esc(x.id)}</span>`).join("")}</div>`).join("") + `</div>
+      <div class="tasks-sum">Готово ${t.done} · у роботі ${t.in_progress} · заблоковано ${t.blocked}</div>`;
+  }
+  if ($("tasks").dataset.html !== html){ $("tasks").innerHTML = html; $("tasks").dataset.html = html; }
+}
+
+const EVENT_TEXT = {
+  stage: (h, n) => `Новий етап: ${(STAGES[STAGE_IDX[h.stage]] || {name:h.note}).name}${h.note && h.note !== (STAGES[STAGE_IDX[h.stage]] || {}).name ? " — " + h.note : ""}`,
+  done: (h, n) => `${n} завершив${h.task ? " " + h.task : ""}: ${h.note || ""}`,
+  needs_input: (h, n) => `${n} має питання до тебе`,
+  blocked: (h, n) => `${n} заблокований${h.task ? " на " + h.task : ""}: ${h.note || ""}`,
+  gate: (h, n) => `Ворота ${(h.gate || "").split("-")[0]}: ${h.note || ""}`,
+  answer: (h, n) => `Ти відповів: ${h.note || ""}`,
+  commit: (h, n) => `Коміт ${h.task || ""} ${h.note ? "· " + h.note : ""}`,
+};
+
+function renderFeed(p){
+  const items = p.history.slice(-16).reverse();
+  const mem = memory[p.slug] || {};
+  const html = items.map((h, i) => {
+    const R = ROLES[h.agent] || {name:h.agent, color:"#8b7cf6"};
+    const txt = (EVENT_TEXT[h.event] || ((h, n) => `${n}: ${h.event} ${h.note || ""}`))(h, R.name);
+    const isFresh = mem.hist !== undefined && i < p.history.length - mem.hist;
+    return `<li class="${isFresh ? "fresh" : ""}"><i style="background:${R.color}"></i><span>${esc(txt)}</span><small>${ago(h.at)}</small></li>`;
+  }).join("") || `<li><i></i><span class="muted">Подій ще немає</span><small></small></li>`;
+  if ($("feed").dataset.html !== html){ $("feed").innerHTML = html; $("feed").dataset.html = html; }
+}
+
+function celebrate(p, lvl){
+  const on = ACHIEVEMENTS.filter(a => a.test(p)).map(a => a.id);
+  const mem = memory[p.slug];
+  if (mem){
+    on.filter(id => !mem.achs.includes(id)).forEach(id => {
+      const a = ACHIEVEMENTS.find(x => x.id === id);
+      toast(a.icon, "Досягнення: " + a.name, a.hint);
+      confetti(70);
+    });
+    if (lvl > mem.lvl && p.stage !== "done"){
+      toast("⬆️", `Рівень ${lvl}!`, STAGES[lvl - 1].name + " · " + STAGES[lvl - 1].desc, "lvlup");
+      confetti(40);
+    }
+  }
+  memory[p.slug] = {achs:on, lvl, hist:p.history.length};
+}
+
+function renderEmpty(){
+  els.rooms = [];
+  $("office").innerHTML = `<div class="empty"><h2>Проєктів ще немає</h2><p class="muted">Запусти в Claude Code <code>/department &lt;твоя ідея&gt;</code> — офіс оживе тут.</p><button class="btn" id="goDemo">Дивитись демо</button></div>`;
+  $("goDemo").onclick = startDemo;
+  setText($("title"), "Табло департаменту"); $("activity").textContent = "";
+  ["ach","tasks","feed"].forEach(id => $(id).innerHTML = "");
+}
+
+// ---------- Тости й конфеті ----------
+function toast(icon, title, sub, cls){
+  const t = document.createElement("div");
+  t.className = "toast " + (cls || "");
+  t.innerHTML = `<span class="ic">${icon}</span><div><b>${esc(title)}</b><span>${esc(sub || "")}</span></div>`;
+  $("toasts").appendChild(t);
+  const all = $("toasts").children;
+  if (all.length > 3) all[0].remove();
+  setTimeout(() => { t.classList.add("out"); setTimeout(() => t.remove(), 400); }, 4200);
+}
+
+const cv = $("confetti"), cx = cv.getContext("2d");
+let parts = [], raf = null;
+function confetti(n){
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  cv.width = innerWidth; cv.height = innerHeight;
+  const colors = ["#8b7cf6","#34d399","#fbbf24","#f472b6","#60a5fa"];
+  for (let i = 0; i < n; i++) parts.push({x:innerWidth * (0.3 + Math.random() * 0.4), y:innerHeight * 0.25, vx:(Math.random() - 0.5) * 9, vy:-Math.random() * 9 - 3, s:4 + Math.random() * 5, c:colors[i % colors.length], r:Math.random() * 6, life:110 + Math.random() * 40});
+  if (!raf) raf = requestAnimationFrame(tick);
+}
+function tick(){
+  cx.clearRect(0, 0, cv.width, cv.height);
+  parts.forEach(q => { q.x += q.vx; q.y += q.vy; q.vy += 0.22; q.vx *= 0.99; q.r += 0.15; q.life--; cx.save(); cx.translate(q.x, q.y); cx.rotate(q.r); cx.fillStyle = q.c; cx.globalAlpha = Math.min(1, q.life / 40); cx.fillRect(-q.s / 2, -q.s / 4, q.s, q.s / 2); cx.restore(); });
+  parts = parts.filter(q => q.life > 0 && q.y < cv.height + 20);
+  raf = parts.length ? requestAnimationFrame(tick) : (cx.clearRect(0, 0, cv.width, cv.height), null);
+}
+
+// ---------- Живі дані ----------
+let mode = "live", pollTimer = null, liveAvailable = false;
+
+async function poll(){
+  try {
+    const r = await fetch("/api/state", {cache:"no-store"});
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    liveAvailable = true;
+    if (mode !== "live") return;
+    projects = data.projects || [];
+    fillSelect();
+    render();
+  } catch (e) {
+    if (mode === "live" && !liveAvailable) startDemo();
+  }
+}
+
+function fillSelect(){
+  const sel = $("proj");
+  const opts = projects.map(p => `<option value="${esc(p.slug)}">${esc(p.title || p.slug)}</option>`).join("");
+  if (sel.dataset.opts !== opts){ sel.innerHTML = opts; sel.dataset.opts = opts; }
+  if (!selected || !projects.some(p => p.slug === selected)){
+    let saved = null; try { saved = localStorage.getItem("dept.project"); } catch (e) {}
+    selected = projects.some(p => p.slug === saved) ? saved : (projects[projects.length - 1] || {}).slug;
+  }
+  sel.value = selected || "";
+  sel.style.display = projects.length ? "" : "none";
+}
+$("proj").addEventListener("change", e => { selected = e.target.value; try { localStorage.setItem("dept.project", selected); } catch (err) {} render(); });
+
+// ---------- Демо ----------
+const DEMO = {speed:1, playing:true, steps:[], i:0, acc:0, timer:null, S:null};
+
+const DEMO_TASKS = [["T-001","Каркас проєкту"],["T-002","Список переговорних"],["T-003","Вхід працівника"],["T-004","Форма бронювання"],["T-005","Перевірка накладок"],
+  ["T-006","Скасування бронювання"],["T-007","Календар на тиждень"],["T-008","Сповіщення на пошту"],["T-009","Адмінка кімнат"]];
+const DEMO_WAVES = [["T-001"],["T-002","T-003","T-004","T-005"],["T-006","T-007","T-008","T-009"]];
+
+function buildDemo(){
+  const S = {slug:"demo", title:"Бронювання переговорних", stage:"1-start", created:nowTs(),
+    gates:{"G1-brief":null,"G2-spec":null,"G3-release":null}, active:[], waiting:null, history:[], tasks:null};
+  const steps = [], step = (wait, fn) => steps.push({wait, fn});
+  const title = id => DEMO_TASKS.find(t => t[0] === id)[1];
+  const ev = (agent, event, note, extra) => S.history.push(Object.assign({at:nowTs(), stage:S.stage, agent, event, note}, extra || {}));
+  const go = id => { S.stage = id; ev("orchestrator", "stage", STAGES[STAGE_IDX[id]].name); };
+  const start = (agent, doing, extra) => S.active.push(Object.assign({agent, doing, since:nowTs()}, extra || {}));
+  const finish = (agent, note, event, task) => {
+    const i = S.active.findIndex(a => a.agent === agent && (!task || a.task === task));
+    const a = i >= 0 ? S.active.splice(i, 1)[0] : {};
+    ev(agent, event || "done", note, {task:a.task, mode:a.mode});
+  };
+  const ask = (agent, question, gate) => { S.waiting = {gate:gate || null, agent, question, since:nowTs()}; };
+  const answer = (note, gate) => {
+    S.waiting = null;
+    if (gate){ S.gates[gate] = {at:nowTs(), decision:note, note}; ev("human", "gate", note, {gate}); }
+    else ev("human", "answer", note);
+  };
+  const recount = () => { const all = S.tasks.waves.flat().filter(t => t.status !== "split"); Object.assign(S.tasks, {total:all.length, done:all.filter(t => t.status === "done").length, in_progress:all.filter(t => t.status === "in_progress").length, blocked:all.filter(t => t.status === "blocked").length}); };
+  const task = id => S.tasks.waves.flat().find(t => t.id === id);
+  const setTask = (id, status) => { task(id).status = status; recount(); };
+  const redStart = id => { const t = task(id); t.status = "in_progress"; recount(); start("test-author", "пише падаючі тести: " + title(id).toLowerCase(), {task:id}); };
+  const devStart = (id, doing) => { const t = task(id); t.status = "in_progress"; t.attempts = (t.attempts || 0) + 1; recount(); start("developer", doing || "пише код під тести: " + title(id).toLowerCase(), {task:id}); };
+  const commit = id => { setTask(id, "done"); ev("orchestrator", "commit", Math.random().toString(16).slice(2, 9), {task:id}); };
+
+  step(0.5, () => ev("orchestrator", "stage", "проєкт створено"));
+  step(1, () => start("brief-interviewer", "фаза 1: кому болить і як виглядає успіх", {mode:"фаза 1"}));
+  step(3, () => { finish("brief-interviewer", "чернетка брифу, 2 питання", "needs_input"); ask("brief-interviewer", "Скільки переговорних і хто може бронювати?"); });
+  step(3, () => answer("6 кімнат, бронюють усі працівники"));
+  step(0.6, () => start("brief-interviewer", "фаза 2: шукає приховані припущення", {mode:"фаза 2"}));
+  step(3, () => { finish("brief-interviewer", "найслабше місце — ніхто не скасовує бронювання", "needs_input"); ask("brief-interviewer", "Пів року потому кімнати знову «зайняті» порожніми бронюваннями. Чому?"); });
+  step(3, () => answer("люди забувають скасувати — треба автозвільнення"));
+  step(0.6, () => start("brief-interviewer", "фаза 3: пропонує нові кути", {mode:"фаза 3"}));
+  step(3, () => { finish("brief-interviewer", "7 вимог, 2 метрики, 3 припущення на вето", "needs_input"); ask("brief-interviewer", "Прийняти 3 припущення агента?"); });
+  step(2.5, () => answer("прийняти все"));
+  step(0.6, () => { finish("brief-interviewer", "бриф на затвердженні"); ask("orchestrator", "Затвердити бриф? 7 вимог, метрика: бронювання за 30 секунд", "G1-brief"); });
+  step(4, () => answer("затверджено", "G1-brief"));
+  step(1, () => go("2-research"));
+  step(0.6, () => start("business-analyst", "пише історії «як… я хочу… щоб…»"));
+  step(4, () => finish("business-analyst", "9 історій, 2 суперечності"));
+  step(1, () => go("3-requirements"));
+  step(0.6, () => start("system-analyst", "розписує сценарії й критерії приймання"));
+  step(4, () => finish("system-analyst", "11 FR, 27 AC усіх 5 типів, 4 NFR"));
+  step(0.6, () => start("ambiguity-hunter", "шукає, де два інженери збудують різне"));
+  step(3.5, () => { finish("ambiguity-hunter", "5 двозначностей, 2 високої ставки"); ask("ambiguity-hunter", "Що таке «зайнята кімната»: є бронювання чи хтось реально сидить?"); });
+  step(3.5, () => answer("є підтверджене бронювання"));
+  step(0.6, () => start("system-analyst", "вносить рішення щодо двозначностей", {mode:"застосувати рішення"}));
+  step(2.5, () => finish("system-analyst", "5 рішень внесено"));
+  step(0.6, () => { start("architect", "обирає стек і межі модулів"); start("ux-designer", "малює 6 екранів у 4 станах"); });
+  step(3.5, () => finish("ux-designer", "6 екранів, 3 нові компоненти"));
+  step(1, () => finish("architect", "4 модулі, 3 ADR"));
+  step(0.6, () => start("security", "будує модель загроз", {mode:"проєктування"}));
+  step(3, () => finish("security", "8 вимог безпеки SEC"));
+  step(0.6, () => { start("critic", "звіряє документи між собою"); start("blind-acceptor", "звіряє специфікацію з брифом наосліп", {mode:"специфікація"}); });
+  step(3.5, () => finish("blind-acceptor", "покрито 7 з 7 вимог"));
+  step(0.8, () => finish("critic", "1 розбіжність: ролі в безпеці ≠ актори"));
+  step(0.4, () => start("security", "вирівнює матрицю доступів з акторами", {mode:"проєктування"}));
+  step(2.5, () => finish("security", "матрицю виправлено"));
+  step(0.4, () => { start("critic", "перевіряє виправлення"); start("blind-acceptor", "звіряє ще раз", {mode:"специфікація"}); });
+  step(2.5, () => { finish("critic", "зауважень немає"); finish("blind-acceptor", "покрито 7 з 7 вимог"); ask("orchestrator", "Затвердити специфікацію? 11 FR, стек: Python + HTMX + PostgreSQL", "G2-spec"); });
+  step(4, () => answer("затверджено", "G2-spec"));
+  step(1, () => go("4-plan"));
+  step(0.6, () => start("qa-engineer", "зіставляє кожен AC з тестами", {mode:"тест-план"}));
+  step(3, () => finish("qa-engineer", "27 AC → 34 тести: unit, integration, e2e"));
+  step(0.6, () => start("planner", "ріже на самодостатні таски й хвилі"));
+  step(3.5, () => { finish("planner", "9 тасків у 3 хвилях, бюджети S/M"); S.tasks = {waves:DEMO_WAVES.map(w => w.map(id => ({id, title:title(id), status:"todo", attempts:0})))}; recount(); });
+  step(1, () => go("5-dev"));
+  // Хвиля 1: каркас
+  step(0.6, () => redStart("T-001"));
+  step(2.5, () => finish("test-author", "правильне падіння: тест збірки червоний", "done", "T-001"));
+  step(0.4, () => devStart("T-001", "ставить каркас і залежності"));
+  step(3, () => finish("developer", "каркас готовий, тести зелені", "done", "T-001"));
+  step(0.4, () => start("code-reviewer", "перевіряє T-001"));
+  step(2.5, () => { finish("code-reviewer", "T-001 схвалено"); commit("T-001"); });
+  // Хвиля 2: спершу всі тести, потім весь код
+  step(1, () => DEMO_WAVES[1].forEach(id => redStart(id)));
+  step(2.5, () => DEMO_WAVES[1].forEach(id => finish("test-author", "правильне падіння", "done", id)));
+  step(0.5, () => DEMO_WAVES[1].forEach(id => devStart(id)));
+  step(3, () => finish("developer", "список і фільтри готові", "done", "T-002"));
+  step(0.8, () => { finish("developer", "вхід через корпоративну пошту", "done", "T-003"); finish("developer", "перевірка накладок", "done", "T-005"); });
+  step(1.2, () => finish("developer", "форма з валідацією", "done", "T-004"));
+  step(0.4, () => start("code-reviewer", "перевіряє T-002…T-005"));
+  step(3, () => { finish("code-reviewer", "3 схвалено, T-004 на доробку"); ["T-002","T-003","T-005"].forEach(commit); });
+  step(0.6, () => devStart("T-004", "виправляє зауваження рев'ю"));
+  step(3, () => finish("developer", "зауваження виправлено", "done", "T-004"));
+  step(0.4, () => start("code-reviewer", "перевіряє T-004 повторно"));
+  step(2, () => { finish("code-reviewer", "T-004 схвалено"); commit("T-004"); });
+  // Хвиля 3: питання до людини посеред роботи
+  step(1, () => DEMO_WAVES[2].forEach(id => redStart(id)));
+  step(2, () => { ["T-006","T-007","T-009"].forEach(id => finish("test-author", "правильне падіння", "done", id)); finish("test-author", "куди слати сповіщення?", "blocked", "T-008"); setTask("T-008", "blocked"); ask("test-author", "T-008: сповіщення на корпоративну пошту чи в Teams?"); });
+  step(0.5, () => ["T-006","T-007","T-009"].forEach(id => devStart(id)));
+  step(3, () => { answer("на корпоративну пошту"); redStart("T-008"); });
+  step(1, () => finish("developer", "скасування з підтвердженням", "done", "T-006"));
+  step(1, () => { finish("test-author", "правильне падіння", "done", "T-008"); devStart("T-008", "пише сповіщення на пошту"); });
+  step(1.5, () => finish("developer", "тижневий календар", "done", "T-007"));
+  step(1.2, () => finish("developer", "адмінка кімнат", "done", "T-009"));
+  step(1.5, () => finish("developer", "сповіщення працюють", "done", "T-008"));
+  step(0.4, () => start("code-reviewer", "перевіряє T-006…T-009"));
+  step(3, () => { finish("code-reviewer", "усі 4 схвалено"); ["T-006","T-007","T-008","T-009"].forEach(commit); });
+  step(1, () => go("6-verify"));
+  step(0.6, () => { start("qa-engineer", "проходить наскрізні сценарії"); start("security", "шукає секрети й дірки", {mode:"аудит"}); });
+  step(3.5, () => finish("security", "критичних знахідок немає"));
+  step(1, () => finish("qa-engineer", "27 з 27 AC, 2 дрібні баги"));
+  step(0.6, () => start("blind-acceptor", "клікає продукт за брифом", {mode:"продукт"}));
+  step(3.5, () => finish("blind-acceptor", "так: 7 з 7 вимог"));
+  step(1, () => go("7-release"));
+  step(0.6, () => start("devops", "готує пробний прогін і план відкату", {mode:"план"}));
+  step(3, () => finish("devops", "збірка і dry-run зелені"));
+  step(0.4, () => start("security", "перевіряє Dockerfile і CI", {mode:"аудит"}));
+  step(2.5, () => { finish("security", "у файлах релізу чисто"); ask("orchestrator", "Розгортати на внутрішній сервер? План відкату готовий", "G3-release"); });
+  step(4.5, () => answer("так, розгортай", "G3-release"));
+  step(0.6, () => start("devops", "розгортає й перевіряє здоров'я сервісу", {mode:"розгортання"}));
+  step(3.5, () => finish("devops", "сайт відповідає, healthcheck налаштовано"));
+  step(1, () => go("8-operate"));
+  step(0.6, () => start("memory-keeper", "пише PROJECT.md і уроки"));
+  step(3.5, () => finish("memory-keeper", "3 уроки, 4 ідеї на наступну версію"));
+  step(1, () => { S.stage = "done"; ev("orchestrator", "stage", "цикл завершено"); });
+  step(9, () => restartDemo());
+  return {S, steps};
+}
+
+function startDemo(){
+  mode = "demo";
+  $("demoBar").classList.add("on");
+  $("demoExit").hidden = !liveAvailable;
+  restartDemo();
+  if (!DEMO.timer) DEMO.timer = setInterval(demoTick, 100);
+}
+function restartDemo(){
+  const d = buildDemo();
+  Object.assign(DEMO, {steps:d.steps, i:0, acc:0, S:d.S});
+  delete memory.demo;
+  projects = [DEMO.S]; selected = "demo";
+  fillSelect(); render();
+}
+function demoTick(){
+  if (mode !== "demo" || !DEMO.playing) return;
+  DEMO.acc += 0.1 * DEMO.speed;
+  let changed = false;
+  while (DEMO.i < DEMO.steps.length && DEMO.acc >= DEMO.steps[DEMO.i].wait){
+    DEMO.acc -= DEMO.steps[DEMO.i].wait;
+    const s = DEMO.steps[DEMO.i++];
+    s.fn();
+    changed = true;
+    if (DEMO.i === 0) break;
+  }
+  if (changed) render();
+}
+$("demoPlay").onclick = () => { DEMO.playing = !DEMO.playing; $("demoPlay").textContent = DEMO.playing ? "Пауза" : "Грати"; };
+document.querySelectorAll("[data-speed]").forEach(b => b.onclick = () => {
+  DEMO.speed = Number(b.dataset.speed);
+  document.querySelectorAll("[data-speed]").forEach(x => x.classList.toggle("on", x === b));
+});
+document.querySelector('[data-speed="1"]').classList.add("on");
+$("demoRestart").onclick = restartDemo;
+$("demoExit").onclick = () => { mode = "live"; $("demoBar").classList.remove("on"); selected = null; poll(); };
+
+// ---------- Старт ----------
+if (new URLSearchParams(location.search).has("demo") || location.protocol === "file:") startDemo();
+poll();
+pollTimer = setInterval(() => { if (mode === "live") poll(); else if (!liveAvailable) poll(); }, 2000);
+setInterval(() => { if (current()) renderFeed(current()); }, 30000);
+</script>
+</body>
+</html>
