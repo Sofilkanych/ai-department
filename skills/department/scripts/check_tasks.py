@@ -5,7 +5,10 @@
 
 Перевіряє docs/04-tasks.json проти брифу, специфікації, вимог безпеки й тест-плану:
   - кожна R, FR, AC, SEC покрита хоча б одним таском (NFR — лише попередження);
-    R зі статусом «скасовано» чи «відкладено» в останній колонці маніфесту пропускаються;
+    R зі статусом «скасовано» чи «відкладено» в останній колонці маніфесту пропускаються
+    (статус порівнюється за початком слова: «відкладено до v2» — теж відкладено);
+  - 04-tasks.json має очікувану форму: на кривий JSON скрипт відповідає повідомленням,
+    а не стеком Python;
   - документи на місці, ID у них знайдено, id тасків не дублюються;
   - кожен ID, згаданий у своєму документі (R — у брифі, FR, AC, NFR — у специфікації,
     SEC — у вимогах безпеки), оформлено за форматом. Згадка без оформлення — помилка:
@@ -16,12 +19,13 @@
   - хвилі узгоджені з полем wave, залежності існують, залежність завжди в ранішій
     хвилі, залежності від розрізаних (split) чи знятих (cancelled) тасків немає;
   - зони файлів тасків однієї хвилі не перетинаються (порівнюються сегменти шляху,
-    тож config.js і config.json — різні файли), два таски з міграціями
-    не стоять в одній хвилі;
-  - кожен таск має самодостатній файл (поле file) із розділами «Контекст» і
-    «Критерії приймання»; його frontmatter (covers, files, deps) читається
-    і збігається з JSON; бюджет контексту порахований чесно, а L обґрунтовано;
-  - кожен AC специфікації є в тест-плані docs/04-test-plan.md.
+    тож config.js і config.json — різні файли, а окремий файл не вважається текою),
+    два таски з міграціями не стоять в одній хвилі;
+  - кожен таск має самодостатній файл (поле file) із розділами «## Контекст» і
+    «## Критерії приймання»; його frontmatter (covers, files, deps) читається
+    і збігається з JSON; бюджет контексту вказано, порахований чесно, а L обґрунтовано;
+  - кожен AC специфікації має в docs/04-test-plan.md рядок таблиці з рівнем тесту
+    (згадка AC в тексті рядком не є).
 Таски зі статусом split (розрізано) і cancelled (знято разом із вимогою) у покриття
 не рахуються.
 Помилка, у якій названо документ («у 03-spec.md …»), стосується його автора, а не плану.
@@ -60,7 +64,10 @@ FORMAT_HINTS = {
     "SEC": "рядок таблиці `| SEC-NN | … |`",
 }
 SPEC_OUT_OF_SCOPE = re.compile(r"^##[ \t][^\n]*поза межами[^\n]*\n.*?(?=^##[ \t]|\Z)", re.M | re.S | re.I)
-EXCLUDED_STATUSES = ("скасовано", "відкладено")
+# Рядок таблиці тест-плану: | AC | Тип AC | Тест | Рівень | Між модулями | Очікуваний результат |
+PLAN_ROW = re.compile(r"^\|\s*[*`]*(AC-\d+\.\d+[a-z]?)[*`]*\s*\|(.*)$", re.M)
+# Статус вимоги порівнюємо за початком слова: «відкладено до v2» і «скасована» — ті самі статуси
+EXCLUDED_PREFIXES = ("скасован", "відкладен")
 INACTIVE_TASK_STATUSES = ("split", "cancelled")
 KINDS = {"scaffold", "feature", "registration", "e2e", "bugfix"}
 BUDGET_LIMITS = (("S", 40), ("M", 120))
@@ -77,6 +84,14 @@ def doc_text(path):
     return text
 
 
+def is_excluded(row):
+    """Чи стоїть в останній колонці рядка маніфесту «скасовано» чи «відкладено».
+    Розмітка й уточнення статусу не роблять: «**відкладено** до v2» — теж відкладено."""
+    cells = [c.strip() for c in row.strip().strip("|").split("|")]
+    status = re.sub(r"[*_~`]", "", cells[-1]).strip().lower() if cells else ""
+    return status.startswith(EXCLUDED_PREFIXES)
+
+
 def scan_ids(path, kinds):
     """Для кожного виду ID: required — мають бути покриті тасками; defined — оформлені
     за форматом; mentioned — згадані будь-де в документі."""
@@ -85,19 +100,53 @@ def scan_ids(path, kinds):
         return {}
     found = {}
     for kind in kinds:
-        required, defined = set(), set()
+        defined, excluded = set(), set()
         for m in ID_PATTERNS[kind].finditer(text):
             defined.add(m.group(1))
-            if kind == "R":
-                # Статус вимоги — лише в останній колонці маніфесту
-                cells = [c.strip().lower() for c in m.group(0).strip().strip("|").split("|")]
-                if cells and cells[-1] in EXCLUDED_STATUSES:
-                    continue
-            required.add(m.group(1))
+            # Вимогу виключено, якщо хоч один її рядок має такий статус: ще одна таблиця
+            # з тим самим R-NN не повертає її в обов'язкові
+            if kind == "R" and is_excluded(m.group(0)):
+                excluded.add(m.group(1))
         prefix = "AC-" if kind == "AC" else ""
         mentioned = {prefix + m.group(1) for m in MENTIONS[kind].finditer(text)}
-        found[kind] = {"required": required, "defined": defined, "mentioned": mentioned}
+        found[kind] = {"required": defined - excluded, "defined": defined, "mentioned": mentioned}
     return found
+
+
+def plan_levels(text):
+    """AC -> рівні тестів із рядків таблиці тест-плану. Згадка AC в тексті рядком не є."""
+    rows = {}
+    for m in PLAN_ROW.finditer(text):
+        cells = [c.strip() for c in m.group(2).strip().strip("|").split("|")]
+        rows.setdefault(m.group(1), []).append(cells[2] if len(cells) > 2 else "")
+    return rows
+
+
+def shape_errors(plan):
+    """Помилки форми 04-tasks.json: щоб планувальник бачив, що виправити, а не стек Python."""
+    if not isinstance(plan, dict):
+        return ["04-tasks.json має бути об'єктом із полями waves і tasks"]
+    errs = []
+    tasks, waves = plan.get("tasks"), plan.get("waves")
+    if not isinstance(tasks, list) or not all(isinstance(t, dict) for t in tasks):
+        errs.append("поле tasks у 04-tasks.json має бути списком об'єктів-тасків")
+    else:
+        for t in tasks:
+            tid = t.get("id")
+            if not isinstance(tid, str) or not tid:
+                errs.append("у таска немає рядкового поля id")
+                continue
+            for key in ("covers", "acceptance", "files", "depends_on"):
+                value = t.get(key, [])
+                if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+                    errs.append(f"{tid}: поле {key} має бути списком рядків")
+            if "file" in t and not isinstance(t["file"], str):
+                errs.append(f"{tid}: поле file має бути рядком — шляхом до файла таска")
+    if not isinstance(waves, list) or not all(
+        isinstance(w, list) and all(isinstance(x, str) for x in w) for w in waves
+    ):
+        errs.append("поле waves у 04-tasks.json має бути списком хвиль, кожна хвиля — список id тасків")
+    return errs
 
 
 def frontmatter(text):
@@ -169,29 +218,45 @@ def segments_may_match(x, y):
     return ("[" in x or "[" in y) and (_fits(x, y) or _fits(y, x))
 
 
-def _overlap(sa, sb):
+def _is_file(zone):
+    """Зона, що закінчується звичайною назвою з розширенням (router.ts), — один файл:
+    усередині неї нічого лежати не може. Тека з крапкою в назві сюди теж потрапить,
+    тому теку завжди пиши з `/**` або з `/` в кінці."""
+    last = zone.rsplit("/", 1)[-1]
+    return not re.search(r"[*?\[{]", last) and re.search(r"[^.]\.[A-Za-z][A-Za-z0-9]*$", last) is not None
+
+
+def _overlap(sa, sb, a_file, b_file):
     if not sa or not sb:
-        # Одна зона закінчилась: це той самий шлях або тека, що містить іншу зону
-        return True
+        rest, ended_is_file = (sb, a_file) if not sa else (sa, b_file)
+        # Одна зона закінчилась. Якщо решта другої може бути порожньою — це той самий шлях.
+        # Інакше перетин є, лише коли зона, що закінчилась, — тека, яка містить решту.
+        return all(s == "**" for s in rest) or not ended_is_file
     if sa[0] == "**":
-        return _overlap(sa[1:], sb) or _overlap(sa, sb[1:])
+        return _overlap(sa[1:], sb, a_file, b_file) or _overlap(sa, sb[1:], a_file, b_file)
     if sb[0] == "**":
-        return _overlap(sa, sb[1:]) or _overlap(sa[1:], sb)
-    return segments_may_match(sa[0], sb[0]) and _overlap(sa[1:], sb[1:])
+        return _overlap(sa, sb[1:], a_file, b_file) or _overlap(sa[1:], sb, a_file, b_file)
+    return segments_may_match(sa[0], sb[0]) and _overlap(sa[1:], sb[1:], a_file, b_file)
 
 
 def zones_overlap(a, b):
     """Чи може якийсь шлях потрапити в обидві зони. Порівнює сегменти шляху, а не початки
     рядків: app/config.js і app/config.json — різні файли, а app/src/auth і
-    app/src/auth/login.ts перетинаються. Де точно сказати не можна — вважає, що перетин є.
+    app/src/auth/login.ts перетинаються. Окремий файл (router.ts) не вважається текою,
+    тож не перетинається з app/**/*.e2e.ts. Де точно сказати не можна — вважає, що перетин є.
     """
-    return _overlap([s for s in a.split("/") if s], [s for s in b.split("/") if s])
+    def segments(zone):
+        return [s for s in zone.split("/") if s and s != "."]
+
+    return _overlap(segments(a), segments(b), _is_file(a), _is_file(b))
 
 
 def main():
     if len(sys.argv) != 2:
         print(__doc__)
         return 2
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")  # повідомлення українською за будь-якої локалі
     project = Path(sys.argv[1])
     docs = project / "docs"
     errors, warnings = [], []
@@ -203,6 +268,15 @@ def main():
         return 1
     except json.JSONDecodeError as e:
         print(f"ПОМИЛКА: 04-tasks.json не є валідним JSON: {e}")
+        return 1
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"ПОМИЛКА: 04-tasks.json не читається як текст UTF-8 ({e.__class__.__name__})")
+        return 1
+    bad_shape = shape_errors(plan)
+    if bad_shape:
+        for e in bad_shape:
+            print(f"ПОМИЛКА: {e}")
+        print(f"Помилок: {len(bad_shape)}")
         return 1
 
     tasks = {}
@@ -219,7 +293,12 @@ def main():
             errors.append(f"немає {docs / fn}")
     required = {}
     for fn, kinds in (("01-brief.md", ["R"]), ("03-spec.md", ["FR", "AC", "NFR"]), ("03-security.md", ["SEC"])):
-        for kind, found in scan_ids(docs / fn, kinds).items():
+        try:
+            scanned = scan_ids(docs / fn, kinds)
+        except (OSError, UnicodeDecodeError) as e:
+            errors.append(f"у {fn}: файл не читається як текст UTF-8 ({e.__class__.__name__})")
+            continue
+        for kind, found in scanned.items():
             required[kind] = found["required"]
             if kind in ("R", "FR", "AC") and not found["defined"]:
                 errors.append(f"у {fn} не знайдено жодного {kind} — потрібен {FORMAT_HINTS[kind]}")
@@ -293,9 +372,14 @@ def main():
         if not path.exists():
             errors.append(f"{tid}: файл таска {rel} не існує")
             continue
-        text = path.read_text(encoding="utf-8")
-        if "## Контекст" not in text or "## Критерії приймання" not in text:
-            errors.append(f"{tid}: у {rel} бракує розділу «Контекст» чи «Критерії приймання»")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            errors.append(f"{tid}: файл таска {rel} не читається як текст UTF-8 ({e.__class__.__name__})")
+            continue
+        # Розділи шукаємо як заголовки другого рівня на початку рядка, а не як підрядок
+        if not all(re.search(rf"^##[ \t]+{title}", text, re.M) for title in ("Контекст", "Критерії приймання")):
+            errors.append(f"{tid}: у {rel} бракує розділу «## Контекст» чи «## Критерії приймання»")
         fm = frontmatter(text)
         for fm_key, json_key in (("covers", "covers"), ("files", "files"), ("deps", "depends_on")):
             fm_val = fm_list(fm.get(fm_key))
@@ -308,23 +392,37 @@ def main():
                 errors.append(f"{tid}: {fm_key} у {rel} не збігається з 04-tasks.json")
         declared = re.search(r'"?([SML])"?', fm.get("context_budget", ""))
         if not declared:
-            warnings.append(f"{tid}: у {rel} немає context_budget")
+            errors.append(f"{tid}: у {rel} немає context_budget — потрібна латинська S, M або L")
             continue
         declared = declared.group(1)
         budgets[declared] = budgets.get(declared, 0) + 1
         counted = budget_lines(text)
-        if counted is not None and "SML".index(budget_size(counted)) > "SML".index(declared):
+        if counted is None:
+            errors.append(
+                f"{tid}: у {rel} не вдалося порахувати бюджет контексту — "
+                "потрібні заголовки «## Навіщо» і «## Критерії приймання»"
+            )
+        elif "SML".index(budget_size(counted)) > "SML".index(declared):
             errors.append(f"{tid}: бюджет {declared}, а пораховано {counted} рядків ({budget_size(counted)})")
-        if declared == "L" and "обґрунтовано" not in fm.get("context_budget", ""):
+        if declared == "L" and not re.search(r"об[ґг]рунтовано", fm.get("context_budget", ""), re.I):
             errors.append(f"{tid}: бюджет контексту L без обґрунтування в {rel}")
 
-    # Тест-план
+    # Тест-план: рахуються лише рядки таблиці, що починаються з AC і мають рівень тесту
     plan_path = docs / "04-test-plan.md"
     if plan_path.exists():
-        in_plan = set(re.findall(r"AC-\d+\.\d+[a-z]?", plan_path.read_text(encoding="utf-8")))
-        missing = sorted(required.get("AC", set()) - in_plan)
-        if missing:
-            errors.append(f"AC без рядка в тест-плані: {', '.join(missing)}")
+        try:
+            levels = plan_levels(plan_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError) as e:
+            errors.append(f"04-test-plan.md не читається як текст UTF-8 ({e.__class__.__name__})")
+            levels = None
+        if levels is not None:
+            wanted = required.get("AC", set())
+            missing = sorted(wanted - levels.keys())
+            if missing:
+                errors.append(f"AC без рядка в тест-плані: {', '.join(missing)}")
+            no_level = sorted(ac for ac in wanted & levels.keys() if not any(levels[ac]))
+            if no_level:
+                errors.append(f"AC без рівня тесту в тест-плані: {', '.join(no_level)}")
 
     print(f"Тасків: {len(tasks)} (активних {len(active)}), хвиль: {len(waves)}")
     for kind, ids in required.items():

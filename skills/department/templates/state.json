@@ -13,6 +13,7 @@
   },
   "active": [],
   "waiting": null,
+  "stopped": null,
   "history": [
     {
       "at": "{YYYY-MM-DD HH:MM:SS}",

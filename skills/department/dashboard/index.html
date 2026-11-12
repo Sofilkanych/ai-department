@@ -314,14 +314,23 @@ const ACHIEVEMENTS = [
   {id:"loop", icon:"🔁", name:"Цикл замкнено", hint:"Пройти всі 8 етапів", test:p => p.stage === "done"},
 ];
 
-function gateOk(g){ return !!g && !!g.decision && !/ще ні/i.test(g.decision); }
+// Ворота пройдено лише за рішень, які справді їх відкривають. «Зупинено», «внести правки»
+// чи будь-що інше в decision — не дозвіл
+function gateOk(g){ return !!g && /^\s*(затверджено|лише локально|так(?=[\s,.!]|$))/i.test(String(g.decision || "")); }
 function hasEvent(p, agent, event){ return p.history.some(h => h.agent === agent && h.event === event); }
 function stageIndex(p){ return p.stage === "done" ? 8 : (STAGE_IDX[p.stage] ?? 0); }
+
+// Події поточного проходу етапу: після повернення на етап старі «готово» вже не рахуються
+function stageEvents(p, stId){
+  let from = 0;
+  p.history.forEach((h, i) => { if (h.event === "stage" && h.stage === stId) from = i; });
+  return p.history.slice(from).filter(h => h.stage === stId);
+}
 
 function stageFraction(p, i){
   const st = STAGES[i];
   if (st.id === "5-dev" && p.tasks && p.tasks.total) return p.tasks.done / p.tasks.total;
-  const done = new Set(p.history.filter(h => h.stage === st.id && h.event === "done").map(h => h.agent));
+  const done = new Set(stageEvents(p, st.id).filter(h => h.event === "done").map(h => h.agent));
   let f = st.agents.filter(a => done.has(a)).length / st.agents.length;
   if (st.gate && !gateOk(p.gates[st.gate])) f = Math.min(f, 0.9);
   return Math.min(f, 0.97);
@@ -340,6 +349,24 @@ const MULTI = {"test-author":2, "developer":2};
 // Ролі, що повертаються на кожну хвилю: до кінця етапу вони «на зміні», а не «готово»
 const RECURRING = new Set(["test-author", "developer", "code-reviewer"]);
 
+// Кімната, де показати роль зараз. Агента можуть покликати поза його етапом (планувальника —
+// посеред розробки): тоді він сидить у найближчій попередній кімнаті, де є його стіл
+function homeRoom(role, idx){
+  const has = r => STAGES[r].desks.some(k => k.split("#")[0] === role);
+  const cur = Math.min(idx, STAGES.length - 1);
+  if (has(cur)) return cur;
+  for (let r = cur - 1; r >= 0; r--) if (has(r)) return r;
+  for (let r = cur + 1; r < STAGES.length; r++) if (has(r)) return r;
+  return -1;
+}
+
+// Таски, на яких роль застрягла: остання подія таска в цьому проході етапу — її «blocked»
+function blockedTasks(p, stId, role){
+  const lastByTask = {};
+  stageEvents(p, stId).forEach(h => { if (h.task) lastByTask[h.task] = h; });
+  return Object.values(lastByTask).filter(h => h.event === "blocked" && h.agent === role);
+}
+
 // Стан кожного столу в кімнаті r
 function deskStates(p, r){
   const idx = stageIndex(p), st = STAGES[r], out = {};
@@ -347,20 +374,24 @@ function deskStates(p, r){
   st.desks.forEach(key => {
     const [role, n] = key.split("#");
     const multi = role in MULTI;
-    const roleActive = p.active.filter(a => a.agent === role);
+    const here = idx < 8 && homeRoom(role, idx) === r;
+    const roleActive = here ? p.active.filter(a => a.agent === role) : [];
+    const stuck = multi && r === idx ? blockedTasks(p, st.id, role).filter(b => !roleActive.some(a => a.task === b.task)) : [];
     const info = {state:"sleep", bubble:"", task:"", hidden:false};
-    if (multi) info.hidden = Number(n) >= Math.max(MULTI[role], r === idx ? roleActive.length : 0);
-    if (idx >= 8 || r < idx) info.state = "done";
+    if (multi) info.hidden = Number(n) >= Math.max(MULTI[role], roleActive.length + stuck.length);
+    const act = multi ? roleActive[Number(n)] : roleActive[0];
+    const waitsHere = here && p.waiting && p.waiting.agent === role && !act && !waitAssigned[role];
+    if (act) Object.assign(info, {state:"work", bubble:act.doing || "працює", task:act.task || act.mode || ""});
+    else if (waitsHere) {
+      Object.assign(info, {state:"wait", bubble:"Питання до тебе", task:(String(p.waiting.question ?? "").match(/^T-\d+/) || [""])[0], hidden:false});
+      waitAssigned[role] = true;
+    }
+    else if (idx >= 8 || r < idx) info.state = "done";
     else if (r > idx) info.state = "sleep";
     else {
-      const act = multi ? roleActive[Number(n)] : roleActive[0];
-      const waitsHere = p.waiting && p.waiting.agent === role && !act && !waitAssigned[role];
-      const last = [...p.history].reverse().find(h => h.stage === st.id && h.agent === role);
-      if (act) Object.assign(info, {state:"work", bubble:act.doing || "працює", task:act.task || act.mode || ""});
-      else if (waitsHere) {
-        Object.assign(info, {state:"wait", bubble:"Питання до тебе", task:(p.waiting.question.match(/^T-\d+/) || [""])[0], hidden:false});
-        waitAssigned[role] = true;
-      }
+      const last = [...stageEvents(p, st.id)].reverse().find(h => h.agent === role);
+      const block = multi ? stuck[Number(n) - roleActive.length] : null;
+      if (block) Object.assign(info, {state:"blocked", bubble:block.note || "заблоковано", task:block.task});
       else if (!multi && last && last.event === "blocked") Object.assign(info, {state:"blocked", bubble:last.note || "заблоковано"});
       else if (!RECURRING.has(role) && last && last.event === "done") info.state = "done";
       else info.state = "queue";
@@ -584,6 +615,7 @@ function render(){
 
 function activityLine(p){
   if (p.stage === "done") return "Цикл завершено. Ідея пройшла шлях до продакшену.";
+  if (p.stopped) return `<b>Проєкт зупинено</b>${p.stopped.note ? ": " + esc(p.stopped.note) : ""}. Щоб продовжити — <code>/department ${esc(p.slug)}</code> у Claude Code.`;
   if (p.waiting) return `<b>Чекаємо на тебе:</b> ${esc(p.waiting.question)}`;
   if (!p.active.length) return "Департамент на мить зупинився між кроками.";
   const groups = {};

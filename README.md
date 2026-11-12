@@ -71,7 +71,7 @@ claude plugin update ai-department@ai-department
 Вручну (з робочої теки, де лежить `projects/`):
 
 ```bash
-python3 -I ~/.claude/plugins/cache/ai-department/ai-department/*/skills/department/dashboard/server.py --root .
+python3 -I "$(ls -d ~/.claude/plugins/cache/ai-department/ai-department/*/ | sort -V | tail -1)skills/department/dashboard/server.py" --root .
 ```
 
 Відкрий <http://127.0.0.1:8787>. Без жодного проєкту можна подивитись демо: <http://127.0.0.1:8787/?demo>. Сервер слухає лише твій комп'ютер (127.0.0.1) і лише читає `projects/*/state.json` та `docs/04-tasks.json`. Сторінка оновлюється кожні 2 секунди. Якщо порт зайнятий — `--port 8788`.

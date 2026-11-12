@@ -32,12 +32,12 @@ def read_json(path):
     stale: <час> — зараз не читається, це остання вдала версія від цього часу;
     broken — не читається, і вдалої версії ще не було."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))  # BOM на початку файла — не помилка
         _last_good[path] = (data, now())
         return data, "ok"
     except FileNotFoundError:
         return None, "missing"
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError):  # OSError: немає прав, це тека тощо
         if path in _last_good:
             data, since = _last_good[path]
             return data, "stale: " + since
@@ -45,11 +45,21 @@ def read_json(path):
 
 
 def summarize_tasks(plan):
+    """Підсумок плану для табло. ValueError — якщо план валідний як JSON, але не тієї форми."""
     if not plan:
         return None
-    tasks = {t.get("id"): t for t in plan.get("tasks", [])}
+    if not isinstance(plan, dict):
+        raise ValueError("план має бути об'єктом")
+    raw_tasks, raw_waves = plan.get("tasks") or [], plan.get("waves") or []
+    if not isinstance(raw_tasks, list) or not all(isinstance(t, dict) for t in raw_tasks):
+        raise ValueError("tasks має бути списком об'єктів")
+    if not isinstance(raw_waves, list) or not all(
+        isinstance(w, list) and all(isinstance(tid, str) for tid in w) for w in raw_waves
+    ):
+        raise ValueError("waves має бути списком списків id")
+    tasks = {t.get("id"): t for t in raw_tasks}
     waves = []
-    for wave in plan.get("waves", []):
+    for wave in raw_waves:
         waves.append([
             {
                 "id": tid,
@@ -70,33 +80,49 @@ def summarize_tasks(plan):
     }
 
 
+def load_project(state_file):
+    """Стан одного проєкту для табло або None, якщо state.json зник."""
+    state, status = read_json(state_file)
+    if status == "missing":
+        return None
+    stale = None
+    if not isinstance(state, dict):
+        # Файл є, але стан проєкту з нього не дістати: показуємо проєкт із попередженням,
+        # а не ховаємо його мовчки
+        state, stale = {}, {"file": "state.json", "since": None}
+    elif status.startswith("stale: "):
+        stale = {"file": "state.json", "since": status[len("stale: "):]}
+    state = dict(state)  # копія: у кеш останньої вдалої версії нічого не дописуємо
+    plan, plan_status = read_json(state_file.parent / "docs" / "04-tasks.json")
+    if stale is None and plan_status not in ("ok", "missing"):
+        since = plan_status[len("stale: "):] if plan_status.startswith("stale: ") else None
+        stale = {"file": "docs/04-tasks.json", "since": since}
+    state.setdefault("slug", state_file.parent.name)
+    for key, default in (("active", []), ("history", []), ("gates", {})):
+        if not isinstance(state.get(key), type(default)):
+            state[key] = default
+    state.setdefault("waiting", None)
+    try:
+        state["tasks"] = summarize_tasks(plan)
+    except ValueError:
+        state["tasks"] = None
+        stale = stale or {"file": "docs/04-tasks.json", "since": None}
+    state["stale"] = stale
+    return state
+
+
 def collect():
     projects = []
     if PROJECTS.exists():
         for state_file in sorted(PROJECTS.glob("*/state.json")):
-            state, status = read_json(state_file)
-            if status == "missing":
-                continue
-            stale = None
-            if not isinstance(state, dict):
-                # Файл є, але стан проєкту з нього не дістати: показуємо проєкт із попередженням,
-                # а не ховаємо його мовчки
-                state, stale = {}, {"file": "state.json", "since": None}
-            elif status.startswith("stale: "):
-                stale = {"file": "state.json", "since": status[len("stale: "):]}
-            state = dict(state)  # копія: у кеш останньої вдалої версії нічого не дописуємо
-            plan, plan_status = read_json(state_file.parent / "docs" / "04-tasks.json")
-            if stale is None and plan_status != "ok" and plan_status != "missing":
-                since = plan_status[len("stale: "):] if plan_status.startswith("stale: ") else None
-                stale = {"file": "docs/04-tasks.json", "since": since}
-            state.setdefault("slug", state_file.parent.name)
-            state.setdefault("active", [])
-            state.setdefault("waiting", None)
-            state.setdefault("history", [])
-            state.setdefault("gates", {})
-            state["tasks"] = summarize_tasks(plan)
-            state["stale"] = stale
-            projects.append(state)
+            try:
+                project = load_project(state_file)
+            except Exception:  # один зіпсований проєкт не має вимикати табло для решти
+                slug = state_file.parent.name
+                project = {"slug": slug, "active": [], "history": [], "gates": {}, "waiting": None,
+                           "tasks": None, "stale": {"file": "state.json", "since": None}}
+            if project is not None:
+                projects.append(project)
     return {"generated_at": datetime.now().isoformat(timespec="seconds"), "projects": projects}
 
 
