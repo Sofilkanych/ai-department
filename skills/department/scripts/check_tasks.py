@@ -7,17 +7,21 @@
   - кожна R, FR, AC, SEC покрита хоча б одним таском (NFR — лише попередження);
     R зі статусом «скасовано» чи «відкладено» в останній колонці маніфесту пропускаються;
   - документи на місці, ID у них знайдено, id тасків не дублюються;
+    ID критерію — лише AC-NN.N або AC-NN.Nb з латинською літерою: інший запис
+    (наприклад, кирилична літера) — помилка, бо такий AC випав би з усіх перевірок;
   - хвилі узгоджені з полем wave, залежності існують, залежність завжди в ранішій
     хвилі, залежності від розрізаних (split) тасків немає;
-  - зони файлів тасків однієї хвилі не перетинаються, два таски з міграціями
+  - зони файлів тасків однієї хвилі не перетинаються (порівнюються сегменти шляху,
+    тож config.js і config.json — різні файли), два таски з міграціями
     не стоять в одній хвилі;
   - кожен таск має самодостатній файл (поле file) із розділами «Контекст» і
-    «Критерії приймання»; його frontmatter (covers, files, deps) збігається з JSON;
-    бюджет контексту порахований чесно, а L обґрунтовано;
+    «Критерії приймання»; його frontmatter (covers, files, deps) читається
+    і збігається з JSON; бюджет контексту порахований чесно, а L обґрунтовано;
   - кожен AC специфікації є в тест-плані docs/04-test-plan.md.
 Таски зі статусом split у покриття не рахуються.
 Код виходу 0 — план придатний, 1 — є помилки.
 """
+import fnmatch
 import json
 import re
 import sys
@@ -30,6 +34,9 @@ ID_PATTERNS = {
     "NFR": re.compile(r"^\|\s*(NFR-\d+)\s*\|", re.M),
     "SEC": re.compile(r"^\|\s*(SEC-\d+)\s*\|", re.M),
 }
+# Усе, що в специфікації оформлено як ID критерію, — щоб знайти записані не за форматом
+AC_BOLD = re.compile(r"\*\*(AC-[^*\n]*)\*\*")
+AC_FORMAT = re.compile(r"AC-\d+\.\d+[a-z]?")
 EXCLUDED_STATUSES = ("скасовано", "відкладено")
 KINDS = {"scaffold", "feature", "registration", "e2e", "bugfix"}
 BUDGET_LIMITS = (("S", 40), ("M", 120))
@@ -65,15 +72,27 @@ def frontmatter(text):
     return out
 
 
+def malformed_acs(path):
+    """ID критеріїв, записані не за форматом: такі не потрапляють у жодну перевірку."""
+    if not path.exists():
+        return []
+    found = AC_BOLD.findall(path.read_text(encoding="utf-8"))
+    return sorted({ac for ac in found if not AC_FORMAT.fullmatch(ac)})
+
+
 def fm_list(value):
-    """'["a", "b"]   # коментар' -> {'a', 'b'}; None, якщо не розібрати."""
-    m = re.match(r"(\[.*?\])", value or "")
-    if not m:
-        return None
+    """'["a", "b"]   # коментар' -> {'a', 'b'}; None, якщо не розібрати.
+
+    Читає JSON-список на початку значення, тож дужки всередині шляху
+    (app/src/app/[id]/page.tsx) списку не обривають.
+    """
     try:
-        return set(json.loads(m.group(1)))
+        parsed, _ = json.JSONDecoder().raw_decode((value or "").strip())
     except json.JSONDecodeError:
         return None
+    if not isinstance(parsed, list) or not all(isinstance(x, str) for x in parsed):
+        return None
+    return set(parsed)
 
 
 def budget_lines(text):
@@ -94,14 +113,47 @@ def budget_size(n):
     return "L"
 
 
-def zone_prefix(glob):
-    """app/src/auth/** -> app/src/auth/ ; app/src/x.ts -> app/src/x.ts"""
-    return re.split(r"[*?\[{]", glob, maxsplit=1)[0]
+def _fits(name, pattern):
+    """[id] у шляху — або буквальна назва (маршрути Next.js), або клас символів: пробуємо обидва."""
+    return fnmatch.fnmatchcase(name, pattern) or fnmatch.fnmatchcase(name, pattern.replace("[", "[[]"))
+
+
+def segments_may_match(x, y):
+    """Чи може одна назва файла чи теки підійти під обидва сегменти зон."""
+    if x == y or "{" in x or "{" in y:  # {a,b} не розбираємо — обережно вважаємо збіг можливим
+        return True
+    wild_x, wild_y = bool(re.search(r"[*?]", x)), bool(re.search(r"[*?]", y))
+    if wild_x and wild_y:
+        # Два шаблони: спільна назва можлива, лише якщо сумісні їхні незмінні початок і кінець
+        head_x, head_y = re.split(r"[*?]", x, maxsplit=1)[0], re.split(r"[*?]", y, maxsplit=1)[0]
+        tail_x, tail_y = re.split(r"[*?]", x)[-1], re.split(r"[*?]", y)[-1]
+        return (head_x.startswith(head_y) or head_y.startswith(head_x)) and (
+            tail_x.endswith(tail_y) or tail_y.endswith(tail_x)
+        )
+    if wild_x:
+        return _fits(y, x)
+    if wild_y:
+        return _fits(x, y)
+    return ("[" in x or "[" in y) and (_fits(x, y) or _fits(y, x))
+
+
+def _overlap(sa, sb):
+    if not sa or not sb:
+        # Одна зона закінчилась: це той самий шлях або тека, що містить іншу зону
+        return True
+    if sa[0] == "**":
+        return _overlap(sa[1:], sb) or _overlap(sa, sb[1:])
+    if sb[0] == "**":
+        return _overlap(sa, sb[1:]) or _overlap(sa[1:], sb)
+    return segments_may_match(sa[0], sb[0]) and _overlap(sa[1:], sb[1:])
 
 
 def zones_overlap(a, b):
-    pa, pb = zone_prefix(a), zone_prefix(b)
-    return pa.startswith(pb) or pb.startswith(pa)
+    """Чи може якийсь шлях потрапити в обидві зони. Порівнює сегменти шляху, а не початки
+    рядків: app/config.js і app/config.json — різні файли, а app/src/auth і
+    app/src/auth/login.ts перетинаються. Де точно сказати не можна — вважає, що перетин є.
+    """
+    return _overlap([s for s in a.split("/") if s], [s for s in b.split("/") if s])
 
 
 def main():
@@ -140,6 +192,12 @@ def main():
     for kind, hint in (("R", "| R-NN |"), ("FR", "### FR-NN"), ("AC", "**AC-NN.N**")):
         if kind in required and not required[kind]:
             errors.append(f"не знайдено жодного {kind} — перевір формат ({hint})")
+    bad_acs = malformed_acs(docs / "03-spec.md")
+    if bad_acs:
+        errors.append(
+            f"AC з ID не за форматом у 03-spec.md: {', '.join(bad_acs)} — "
+            "має бути AC-NN.N або AC-NN.Nb з латинською літерою"
+        )
     covered = {c for t in active.values() for c in t.get("covers", [])}
     for kind, ids in required.items():
         missing = sorted(ids - covered)
@@ -210,7 +268,10 @@ def main():
         for fm_key, json_key in (("covers", "covers"), ("files", "files"), ("deps", "depends_on")):
             fm_val = fm_list(fm.get(fm_key))
             if fm_val is None:
-                warnings.append(f"{tid}: у {rel} не вдалося прочитати {fm_key}")
+                errors.append(
+                    f"{tid}: у {rel} не вдалося прочитати {fm_key} — "
+                    f'запиши списком в один рядок: {fm_key}: ["…", "…"]'
+                )
             elif fm_val != set(t.get(json_key, [])):
                 errors.append(f"{tid}: {fm_key} у {rel} не збігається з 04-tasks.json")
         declared = re.search(r'"?([SML])"?', fm.get("context_budget", ""))
