@@ -18,19 +18,30 @@ DASHBOARD = Path(__file__).resolve().parent
 PROJECTS = Path.cwd() / "projects"  # перевизначається параметром --root
 
 # Оркестратор переписує state.json під час роботи. Якщо прочитали файл
-# наполовину записаним, віддаємо останню вдалу версію.
-_last_good = {}
+# наполовину записаним, віддаємо останню вдалу версію — і кажемо сторінці,
+# від якого часу вона, щоб стара картина не видавалася за живу.
+_last_good = {}  # шлях -> (дані, коли востаннє прочитали без помилок)
+
+
+def now():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def read_json(path):
+    """(дані, стан). ok — щойно прочитано; missing — файла немає;
+    stale: <час> — зараз не читається, це остання вдала версія від цього часу;
+    broken — не читається, і вдалої версії ще не було."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        _last_good[path] = data
-        return data
+        _last_good[path] = (data, now())
+        return data, "ok"
     except FileNotFoundError:
-        return None
+        return None, "missing"
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return _last_good.get(path)
+        if path in _last_good:
+            data, since = _last_good[path]
+            return data, "stale: " + since
+        return None, "broken"
 
 
 def summarize_tasks(plan):
@@ -48,8 +59,8 @@ def summarize_tasks(plan):
             }
             for tid in wave
         ])
-    # Розрізані таски замінено новими — у прогрес вони не входять
-    statuses = [t.get("status", "todo") for t in tasks.values() if t.get("status") != "split"]
+    # Розрізані таски замінено новими, зняті прибрано разом із вимогою — у прогрес вони не входять
+    statuses = [t.get("status", "todo") for t in tasks.values() if t.get("status") not in ("split", "cancelled")]
     return {
         "total": len(statuses),
         "done": statuses.count("done"),
@@ -63,16 +74,28 @@ def collect():
     projects = []
     if PROJECTS.exists():
         for state_file in sorted(PROJECTS.glob("*/state.json")):
-            state = read_json(state_file)
-            if not isinstance(state, dict):
+            state, status = read_json(state_file)
+            if status == "missing":
                 continue
-            plan = read_json(state_file.parent / "docs" / "04-tasks.json")
+            stale = None
+            if not isinstance(state, dict):
+                # Файл є, але стан проєкту з нього не дістати: показуємо проєкт із попередженням,
+                # а не ховаємо його мовчки
+                state, stale = {}, {"file": "state.json", "since": None}
+            elif status.startswith("stale: "):
+                stale = {"file": "state.json", "since": status[len("stale: "):]}
+            state = dict(state)  # копія: у кеш останньої вдалої версії нічого не дописуємо
+            plan, plan_status = read_json(state_file.parent / "docs" / "04-tasks.json")
+            if stale is None and plan_status != "ok" and plan_status != "missing":
+                since = plan_status[len("stale: "):] if plan_status.startswith("stale: ") else None
+                stale = {"file": "docs/04-tasks.json", "since": since}
             state.setdefault("slug", state_file.parent.name)
             state.setdefault("active", [])
             state.setdefault("waiting", None)
             state.setdefault("history", [])
             state.setdefault("gates", {})
             state["tasks"] = summarize_tasks(plan)
+            state["stale"] = stale
             projects.append(state)
     return {"generated_at": datetime.now().isoformat(timespec="seconds"), "projects": projects}
 

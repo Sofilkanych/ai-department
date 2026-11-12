@@ -7,10 +7,14 @@
   - кожна R, FR, AC, SEC покрита хоча б одним таском (NFR — лише попередження);
     R зі статусом «скасовано» чи «відкладено» в останній колонці маніфесту пропускаються;
   - документи на місці, ID у них знайдено, id тасків не дублюються;
-    ID критерію — лише AC-NN.N або AC-NN.Nb з латинською літерою: інший запис
-    (наприклад, кирилична літера) — помилка, бо такий AC випав би з усіх перевірок;
+  - кожен ID, згаданий у своєму документі (R — у брифі, FR, AC, NFR — у специфікації,
+    SEC — у вимогах безпеки), оформлено за форматом. Згадка без оформлення — помилка:
+    інакше критерій без жирного, з кириличною літерою чи під заголовком не того рівня
+    мовчки випав би з усіх перевірок;
+  - розділ специфікації «Поза межами цієї версії» не читається: туди переносять FR і AC
+    скасованих чи відкладених вимог, і плану вони не стосуються;
   - хвилі узгоджені з полем wave, залежності існують, залежність завжди в ранішій
-    хвилі, залежності від розрізаних (split) тасків немає;
+    хвилі, залежності від розрізаних (split) чи знятих (cancelled) тасків немає;
   - зони файлів тасків однієї хвилі не перетинаються (порівнюються сегменти шляху,
     тож config.js і config.json — різні файли), два таски з міграціями
     не стоять в одній хвилі;
@@ -18,7 +22,9 @@
     «Критерії приймання»; його frontmatter (covers, files, deps) читається
     і збігається з JSON; бюджет контексту порахований чесно, а L обґрунтовано;
   - кожен AC специфікації є в тест-плані docs/04-test-plan.md.
-Таски зі статусом split у покриття не рахуються.
+Таски зі статусом split (розрізано) і cancelled (знято разом із вимогою) у покриття
+не рахуються.
+Помилка, у якій названо документ («у 03-spec.md …»), стосується його автора, а не плану.
 Код виходу 0 — план придатний, 1 — є помилки.
 """
 import fnmatch
@@ -27,36 +33,70 @@ import re
 import sys
 from pathlib import Path
 
+# Як ID має бути оформлений, щоб увійти в перевірки. У комірці таблиці й у заголовку
+# дозволено жирний чи моноширинний ID і заголовок сусіднього рівня: так іноді пишуть
+# агенти, і губити вимогу через це не варто.
 ID_PATTERNS = {
-    "R": re.compile(r"^\|\s*(R-\d+)\s*\|.*$", re.M),
-    "FR": re.compile(r"^###\s*(FR-\d+)", re.M),
+    "R": re.compile(r"^\|\s*[*`]*(R-\d+)[*`]*\s*\|.*$", re.M),
+    "FR": re.compile(r"^#{2,4}\s*\**(FR-\d+)", re.M),
     "AC": re.compile(r"\*\*(AC-\d+\.\d+[a-z]?)\*\*"),
-    "NFR": re.compile(r"^\|\s*(NFR-\d+)\s*\|", re.M),
-    "SEC": re.compile(r"^\|\s*(SEC-\d+)\s*\|", re.M),
+    "NFR": re.compile(r"^\|\s*[*`]*(NFR-\d+)[*`]*\s*\|", re.M),
+    "SEC": re.compile(r"^\|\s*[*`]*(SEC-\d+)[*`]*\s*\|", re.M),
 }
-# Усе, що в специфікації оформлено як ID критерію, — щоб знайти записані не за форматом
-AC_BOLD = re.compile(r"\*\*(AC-[^*\n]*)\*\*")
-AC_FORMAT = re.compile(r"AC-\d+\.\d+[a-z]?")
+# Будь-яка згадка ID у тексті — щоб знайти згадані, але не оформлені за форматом
+MENTIONS = {
+    "R": re.compile(r"\b(R-\d+)\b"),
+    "FR": re.compile(r"\b(FR-\d+)\b"),
+    "NFR": re.compile(r"\b(NFR-\d+)\b"),
+    "SEC": re.compile(r"\b(SEC-\d+)\b"),
+    # «АС» кирилицею на вигляд таке саме, як латинське AC, тому ловимо обидва записи
+    "AC": re.compile(r"(?<![\w-])[AА][CС]-(\d+\.\d+[a-zа-яіїєґ]?)"),
+}
+FORMAT_HINTS = {
+    "R": "рядок маніфесту `| R-NN | … |`",
+    "FR": "заголовок `### FR-NN: назва`",
+    "AC": "`**AC-NN.N**` жирним на початку пункту — лише ID, латиницею",
+    "NFR": "рядок таблиці `| NFR-NN | … |`",
+    "SEC": "рядок таблиці `| SEC-NN | … |`",
+}
+SPEC_OUT_OF_SCOPE = re.compile(r"^##[ \t][^\n]*поза межами[^\n]*\n.*?(?=^##[ \t]|\Z)", re.M | re.S | re.I)
 EXCLUDED_STATUSES = ("скасовано", "відкладено")
+INACTIVE_TASK_STATUSES = ("split", "cancelled")
 KINDS = {"scaffold", "feature", "registration", "e2e", "bugfix"}
 BUDGET_LIMITS = (("S", 40), ("M", 120))
 
 
-def ids_from(path, kinds):
+def doc_text(path):
+    """Текст документа або None, якщо файла немає. Зі специфікації прибрано розділ
+    «Поза межами цієї версії»: туди переносять FR і AC скасованих чи відкладених вимог."""
     if not path.exists():
-        return {}
+        return None
     text = path.read_text(encoding="utf-8")
+    if path.name == "03-spec.md":
+        text = SPEC_OUT_OF_SCOPE.sub("", text)
+    return text
+
+
+def scan_ids(path, kinds):
+    """Для кожного виду ID: required — мають бути покриті тасками; defined — оформлені
+    за форматом; mentioned — згадані будь-де в документі."""
+    text = doc_text(path)
+    if text is None:
+        return {}
     found = {}
     for kind in kinds:
-        ids = set()
+        required, defined = set(), set()
         for m in ID_PATTERNS[kind].finditer(text):
+            defined.add(m.group(1))
             if kind == "R":
                 # Статус вимоги — лише в останній колонці маніфесту
                 cells = [c.strip().lower() for c in m.group(0).strip().strip("|").split("|")]
                 if cells and cells[-1] in EXCLUDED_STATUSES:
                     continue
-            ids.add(m.group(1))
-        found[kind] = ids
+            required.add(m.group(1))
+        prefix = "AC-" if kind == "AC" else ""
+        mentioned = {prefix + m.group(1) for m in MENTIONS[kind].finditer(text)}
+        found[kind] = {"required": required, "defined": defined, "mentioned": mentioned}
     return found
 
 
@@ -70,14 +110,6 @@ def frontmatter(text):
         if sep and not line.startswith(" "):
             out[key.strip()] = value.strip()
     return out
-
-
-def malformed_acs(path):
-    """ID критеріїв, записані не за форматом: такі не потрапляють у жодну перевірку."""
-    if not path.exists():
-        return []
-    found = AC_BOLD.findall(path.read_text(encoding="utf-8"))
-    return sorted({ac for ac in found if not AC_FORMAT.fullmatch(ac)})
 
 
 def fm_list(value):
@@ -179,25 +211,24 @@ def main():
             errors.append(f"дублікат id таска: {t.get('id')}")
         tasks[t.get("id")] = t
     waves = plan.get("waves", [])
-    active = {tid: t for tid, t in tasks.items() if t.get("status") != "split"}
+    active = {tid: t for tid, t in tasks.items() if t.get("status") not in INACTIVE_TASK_STATUSES}
 
     # Покриття
     for fn in ("01-brief.md", "03-spec.md", "03-security.md", "04-test-plan.md"):
         if not (docs / fn).exists():
             errors.append(f"немає {docs / fn}")
     required = {}
-    required.update(ids_from(docs / "01-brief.md", ["R"]))
-    required.update(ids_from(docs / "03-spec.md", ["FR", "AC", "NFR"]))
-    required.update(ids_from(docs / "03-security.md", ["SEC"]))
-    for kind, hint in (("R", "| R-NN |"), ("FR", "### FR-NN"), ("AC", "**AC-NN.N**")):
-        if kind in required and not required[kind]:
-            errors.append(f"не знайдено жодного {kind} — перевір формат ({hint})")
-    bad_acs = malformed_acs(docs / "03-spec.md")
-    if bad_acs:
-        errors.append(
-            f"AC з ID не за форматом у 03-spec.md: {', '.join(bad_acs)} — "
-            "має бути AC-NN.N або AC-NN.Nb з латинською літерою"
-        )
+    for fn, kinds in (("01-brief.md", ["R"]), ("03-spec.md", ["FR", "AC", "NFR"]), ("03-security.md", ["SEC"])):
+        for kind, found in scan_ids(docs / fn, kinds).items():
+            required[kind] = found["required"]
+            if kind in ("R", "FR", "AC") and not found["defined"]:
+                errors.append(f"у {fn} не знайдено жодного {kind} — потрібен {FORMAT_HINTS[kind]}")
+            stray = sorted(found["mentioned"] - found["defined"])
+            if stray:
+                errors.append(
+                    f"у {fn} згадано, але не оформлено за форматом: {', '.join(stray)} — "
+                    f"потрібен {FORMAT_HINTS[kind]}; оформ або прибери згадку"
+                )
     covered = {c for t in active.values() for c in t.get("covers", [])}
     for kind, ids in required.items():
         missing = sorted(ids - covered)
@@ -227,7 +258,8 @@ def main():
             if dep not in tasks:
                 errors.append(f"{tid} залежить від неіснуючого {dep}")
             elif dep not in active:
-                errors.append(f"{tid} залежить від розрізаного {dep} — переведи на нові таски")
+                why = "знятого" if tasks[dep].get("status") == "cancelled" else "розрізаного"
+                errors.append(f"{tid} залежить від {why} {dep} — переведи залежність на чинні таски")
             elif dep in wave_of and wave_of[dep] >= wave_of[tid]:
                 errors.append(f"{tid} (хвиля {wave_of[tid]}) залежить від {dep} (хвиля {wave_of[dep]})")
         if not t.get("acceptance"):

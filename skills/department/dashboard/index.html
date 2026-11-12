@@ -61,6 +61,11 @@ h1,h2,h3,p{margin:0}
 .demo-bar{display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;padding:8px 12px;border:1px dashed var(--line-strong);border-radius:10px;color:var(--muted);font-size:13px}
 .demo-bar.on{display:flex}
 .demo-bar .tag-demo{background:var(--amber);color:#3a2a05;font-weight:700;border-radius:6px;padding:1px 7px;font-size:12px}
+/* Попередження: дані застарілі або сервер мовчить. Офіс тьмяніє й завмирає, щоб стара картина не видавалася за живу */
+.notice{margin-top:12px;padding:8px 12px;border:1px solid var(--amber);background:var(--amber-soft);border-radius:10px;font-size:13px}
+.notice[hidden]{display:none}
+body.outdated .office,body.outdated .track{opacity:.5;filter:grayscale(.7)}
+body.outdated .office *{animation-play-state:paused !important}
 .btn{background:var(--panel);border:1px solid var(--line-strong);border-radius:8px;padding:4px 10px;cursor:pointer}
 .btn:hover{border-color:var(--violet)}
 .btn.on{background:var(--violet-soft);border-color:var(--violet)}
@@ -189,6 +194,7 @@ aside{display:flex;flex-direction:column;gap:14px}
 .chip.in_progress{background:var(--violet-soft);color:#c9c1ff;animation:glow 1.4s infinite}
 .chip.done{background:var(--green-soft);color:var(--green)}
 .chip.blocked{background:var(--red-soft);color:var(--red)}
+.chip.cancelled,.chip.split{opacity:.5;text-decoration:line-through}
 .tasks-sum{font-size:12px;color:var(--muted);margin-top:8px}
 .feed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto}
 .feed li{display:grid;grid-template-columns:10px 1fr auto;gap:8px;align-items:baseline;font-size:12.5px}
@@ -241,6 +247,7 @@ aside{display:flex;flex-direction:column;gap:14px}
     <button class="btn" id="demoRestart">Заново</button>
     <button class="btn" id="demoExit" hidden>До справжніх проєктів</button>
   </div>
+  <div class="notice" id="notice" role="status" hidden></div>
   <nav class="track" id="track" aria-label="Рівні"></nav>
   <div class="layout">
     <main class="office" id="office"></main>
@@ -500,6 +507,13 @@ function ago(s){
   return Math.round(sec / 86400) + " дн тому";
 }
 const pad = n => String(n).padStart(2, "0");
+// Скільки вже триває робота агента: так завислого видно, а не лише того, хто працює
+function lasting(s){
+  const d = parseTs(s); if (!d || isNaN(d)) return "";
+  const min = Math.max(0, Math.round((Date.now() - d) / 60000));
+  if (min < 1) return "щойно почав";
+  return min < 60 ? `уже ${min} хв` : `уже ${Math.floor(min / 60)} год ${pad(min % 60)} хв`;
+}
 function nowTs(){ const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -509,12 +523,26 @@ const memory = {};
 
 function current(){ return projects.find(p => p.slug === selected) || projects[0] || null; }
 
+// Попередження над офісом: offline — сервер мовчить, stale — файл проєкту не читається,
+// render — стан не вдалося показати. Поки є перші два, офіс тьмяніє.
+const notices = {};
+function setNotice(key, text){
+  if (text) notices[key] = text; else delete notices[key];
+  const all = Object.values(notices);
+  $("notice").hidden = !all.length;
+  setText($("notice"), all.join(" "));
+  document.body.classList.toggle("outdated", "offline" in notices || "stale" in notices);
+}
+
 function render(){
   const p = current();
   const office = $("office");
   if (!p){ renderEmpty(); return; }
   if (!els.rooms.length || !office.contains(els.cab)) buildOffice();
   p.history = p.history || []; p.active = p.active || []; p.gates = p.gates || {};
+  setNotice("stale", !p.stale ? "" : p.stale.since
+    ? `Файл ${p.stale.file} зараз не читається. На екрані — остання вдала версія, від ${String(p.stale.since).slice(11, 16)}.`
+    : `Файл ${p.stale.file} не читається, тому справжній стан проєкту невідомий.`);
 
   const idx = stageIndex(p), pct = progress(p), xp = Math.round(pct * 10);
   const lvl = Math.min(idx + 1, 8);
@@ -561,8 +589,8 @@ function activityLine(p){
   const groups = {};
   p.active.forEach(a => { groups[a.agent] = (groups[a.agent] || 0) + 1; });
   const names = Object.entries(groups).map(([a, n]) => `<b>${esc((ROLES[a] || {name:a}).name)}${n > 1 ? " ×" + n : ""}</b>`);
-  const first = p.active[0];
-  return `Зараз працюють: ${names.join(", ")} · ${esc((ROLES[first.agent] || {name:first.agent}).name)} ${esc(first.doing || "")}`;
+  const first = p.active[0], t = lasting(first.since);
+  return `Зараз працюють: ${names.join(", ")} · ${esc((ROLES[first.agent] || {name:first.agent}).name)} ${esc(first.doing || "")}${t ? " · " + t : ""}`;
 }
 
 function renderTrack(p, idx){
@@ -632,7 +660,7 @@ function renderTasks(p){
   if (!t || !t.total){ html = `<p class="muted">План ще не складено. Таски з'являться після етапу 4.</p>`; $("tasksCount").textContent = ""; }
   else {
     $("tasksCount").textContent = `${t.done} / ${t.total}`;
-    html = `<div class="waves">` + t.waves.map((w, i) => `<div class="wave"><span>Хвиля ${i + 1}</span>${w.map(x => `<span class="chip ${x.status}" title="${esc(x.id + " · " + x.title)}">${esc(x.id)}</span>`).join("")}</div>`).join("") + `</div>
+    html = `<div class="waves">` + t.waves.map((w, i) => `<div class="wave"><span>Хвиля ${i + 1}</span>${w.map(x => `<span class="chip ${esc(x.status)}" title="${esc(x.id + " · " + x.title)}">${esc(x.id)}</span>`).join("")}</div>`).join("") + `</div>
       <div class="tasks-sum">Готово ${t.done} · у роботі ${t.in_progress} · заблоковано ${t.blocked}</div>`;
   }
   if ($("tasks").dataset.html !== html){ $("tasks").innerHTML = html; $("tasks").dataset.html = html; }
@@ -677,12 +705,27 @@ function celebrate(p, lvl){
   memory[p.slug] = {achs:on, lvl, hist:p.history.length};
 }
 
-function renderEmpty(){
+// Прибирає панелі разом із запам'ятованим вмістом: інакше після повернення проєкту
+// з тим самим станом вони лишилися б порожніми
+function clearPanels(){
   els.rooms = [];
+  ["ach","tasks","feed","track"].forEach(id => { $(id).innerHTML = ""; delete $(id).dataset.html; });
+  ["activity","achCount","tasksCount"].forEach(id => { $(id).textContent = ""; });
+  setText($("title"), "Табло департаменту");
+  setNotice("stale", "");
+}
+
+function renderEmpty(){
+  clearPanels();
   $("office").innerHTML = `<div class="empty"><h2>Проєктів ще немає</h2><p class="muted">Запусти в Claude Code <code>/department &lt;твоя ідея&gt;</code> — офіс оживе тут.</p><button class="btn" id="goDemo">Дивитись демо</button></div>`;
   $("goDemo").onclick = startDemo;
-  setText($("title"), "Табло департаменту"); $("activity").textContent = "";
-  ["ach","tasks","feed"].forEach(id => $(id).innerHTML = "");
+}
+
+// Сервер не відповів жодного разу: кажемо про це прямо, а не показуємо вигаданий проєкт
+function renderNoServer(){
+  clearPanels();
+  $("office").innerHTML = `<div class="empty"><h2>Сервер табло не відповідає</h2><p class="muted">Запусти його знову в Claude Code: <code>/department табло</code>. Сторінка сама підхопить дані, щойно сервер відповість.</p><button class="btn" id="goDemo">Дивитись демо</button></div>`;
+  $("goDemo").onclick = startDemo;
 }
 
 // ---------- Тости й конфеті ----------
@@ -713,21 +756,34 @@ function tick(){
 }
 
 // ---------- Живі дані ----------
-let mode = "live", pollTimer = null, liveAvailable = false;
+let mode = "live", pollTimer = null, liveAvailable = false, lastOk = null;
 
 async function poll(){
+  let data;
   try {
     const r = await fetch("/api/state", {cache:"no-store"});
     if (!r.ok) throw new Error(r.status);
-    const data = await r.json();
-    liveAvailable = true;
-    if (mode !== "live") return;
-    projects = data.projects || [];
-    fillSelect();
-    render();
+    data = await r.json();
   } catch (e) {
-    if (mode === "live" && !liveAvailable) startDemo();
+    offline();
+    return;
   }
+  liveAvailable = true; lastOk = new Date();
+  $("demoExit").hidden = false;
+  if (mode !== "live") return;
+  setNotice("offline", "");
+  projects = data.projects || [];
+  fillSelect();
+  // Помилку показу не плутаємо з помилкою зв'язку: інакше сторінка мовчки завмирає
+  try { render(); setNotice("render", ""); }
+  catch (e) { setNotice("render", `Табло не змогло показати стан проєкту (${e.message}). Картина на екрані може бути неповною.`); }
+}
+
+// Сервер не відповів. Справжні проєкти не підміняємо демо: кажемо, з якого часу дані старі
+function offline(){
+  if (mode !== "live") return;
+  if (!liveAvailable){ renderNoServer(); return; }
+  setNotice("offline", `Немає зв'язку із сервером табло з ${pad(lastOk.getHours())}:${pad(lastOk.getMinutes())}. На екрані — стан на той момент, він міг змінитися.`);
 }
 
 function fillSelect(){
@@ -874,6 +930,7 @@ function buildDemo(){
 
 function startDemo(){
   mode = "demo";
+  ["offline","stale","render"].forEach(key => setNotice(key, ""));
   $("demoBar").classList.add("on");
   $("demoExit").hidden = !liveAvailable;
   restartDemo();
